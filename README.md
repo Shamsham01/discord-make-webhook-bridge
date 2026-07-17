@@ -17,8 +17,8 @@ It can also turn the webhook response into a Discord reply, so server owners can
 - Optional JSON webhook response → Discord reply
 - URL allow-list and HTTPS-only validation
 - Atomic JSON persistence
-- Health endpoint and Docker/Render deployment files
-- Duplicate event protection and safe Discord reply splitting
+- Cybrancee deployment guide and optional Dockerfile
+- Health endpoint, duplicate event protection and safe Discord reply splitting
 
 ## Commands
 
@@ -178,24 +178,43 @@ Example runtime record:
 
 ### Hosting warning
 
-The JSON store is suitable for one bot process and a modest number of servers. It requires persistent storage. On hosts with ephemeral filesystems, the settings disappear after a redeploy unless you mount a persistent disk.
+The JSON store is suitable for one bot process and a modest number of servers. Back up `.env` and `data/guilds.json` before reinstalling, migrating, or clearing the Cybrancee server files.
 
 For multiple replicas or a larger public bot, replace the JSON store with PostgreSQL, Supabase, Redis or another shared database.
 
-## Render deployment
+## Cybrancee deployment
 
-A `render.yaml` blueprint and Dockerfile are included.
+See the complete [Cybrancee deployment guide](CYBRANCEE.md).
 
-1. Create a Render Blueprint from the repository.
-2. Add `DISCORD_TOKEN` as a secret environment variable.
-3. Deploy on a plan supporting a persistent disk.
-4. Keep `DATA_FILE=/data/guilds.json`.
+Use these Startup settings:
 
-The service exposes:
+| Cybrancee setting | Value |
+|---|---|
+| Git Repo Address | `https://github.com/Shamsham01/discord-make-webhook-bridge` |
+| Git Branch | `main` |
+| Auto Update | Enabled |
+| Node.js version / Docker Image | Node.js 20 or Node.js 22 |
+| Bot JS File | `src/index.js` |
+| Additional Node Packages | `discord.js dotenv` |
+
+For the initial Git installation, Cybrancee requires an empty file manager. Configure the Git fields, use **Reinstall Server → Delete current files and reinstall server**, then restart so the repository is pulled.
+
+> Reinstalling permanently deletes current server files. Back up an existing `.env` and `data/guilds.json` first.
+
+After the repository is installed, create `.env` in the project root using `.env.example` as the template. At minimum, set:
+
+```env
+DISCORD_TOKEN=your_discord_bot_token
+DATA_FILE=./data/guilds.json
+```
+
+The included health server exposes:
 
 ```text
 GET /health
 ```
+
+The Discord bridge itself does not require a public HTTP endpoint; it connects outbound to Discord and Make.
 
 ## Environment variables
 
@@ -216,7 +235,7 @@ GET /health
 - The default allow-list accepts HTTPS endpoints below `make.com` only.
 - Avoid setting `ALLOWED_WEBHOOK_HOSTS=*` on a public multi-tenant bot because administrators could make the service request arbitrary destinations.
 - Redirects are rejected so an allowed URL cannot redirect the bot to a disallowed host.
-- Webhook URLs and optional secrets are stored in the local JSON file. Protect the host and persistent disk.
+- Webhook URLs and optional secrets are stored in the local JSON file. Protect and back up the Cybrancee server files.
 - The bot ignores messages from bots and Discord webhooks to prevent loops.
 - Discord output from Make is sent with mentions disabled.
 
