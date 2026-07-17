@@ -1,0 +1,28 @@
+{
+  "name": "discord-make-webhook-bridge",
+  "version": "1.0.0",
+  "description": "A multi-server Discord bot that forwards mentions and replies to per-guild Make.com webhooks.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test",
+    "check": "node --check src/index.js && node --test"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.4.2"
+  },
+  "license": "MIT",
+  "keywords": [
+    "discord",
+    "make.com",
+    "webhook",
+    "chatbot",
+    "automation"
+  ]
+}
