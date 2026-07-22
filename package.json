@@ -1,14 +1,14 @@
 {
   "name": "discord-make-webhook-bridge",
-  "version": "1.0.0",
-  "description": "A multi-server Discord bot that forwards mentions and replies to per-guild Make.com webhooks.",
+  "version": "2.0.0",
+  "description": "A multi-server Discord bot that runs named Make.com workflows through mentions, replies, slash commands and optional AI routing.",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "test": "node --test",
-    "check": "node --check src/index.js && node --test"
+    "check": "node --check src/index.js && node --check src/commands.js && node --check src/store.js && node --check src/webhook.js && node --test"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -23,6 +23,7 @@
     "make.com",
     "webhook",
     "chatbot",
-    "automation"
+    "automation",
+    "ai-router"
   ]
 }
