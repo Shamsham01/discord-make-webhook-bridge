@@ -2,6 +2,7 @@ import {
   Client,
   Events,
   GatewayIntentBits,
+  MessageFlags,
 } from 'discord.js';
 import { env, assertRequiredEnvironment } from './env.js';
 import { GuildConfigStore, normalizeName } from './store.js';
@@ -65,7 +66,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     console.error('[discord] Command failed:', error);
     const message = '❌ The command failed unexpectedly. Check the bot logs.';
     if (interaction.deferred || interaction.replied) await interaction.editReply(message).catch(() => {});
-    else await interaction.reply({ content: message, ephemeral: true }).catch(() => {});
+    else await interaction.reply({ content: message, flags: MessageFlags.Ephemeral }).catch(() => {});
   }
 });
 

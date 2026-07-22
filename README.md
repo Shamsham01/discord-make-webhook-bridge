@@ -22,16 +22,25 @@ It can also turn the webhook response into a Discord reply, so server owners can
 
 ## Commands
 
-Only members with **Manage Server** permission can use these commands.
+Admin commands (requires **Manage Server**):
 
 ```text
-/webhook set url:<MAKE_WEBHOOK_URL> [channel:#channel] [secret:optional-secret]
-/webhook status
-/webhook test
-/webhook remove
+/webhook set name:<workflow> url:<MAKE_WEBHOOK_URL> [description:] [channel:#channel] [secret:]
+/webhook list
+/webhook status name:<workflow>
+/webhook test name:<workflow>
+/webhook remove name:<workflow>
+/webhook default name:<workflow>
+/webhook router name:<workflow|off>
 ```
 
-The webhook URL is never printed back into Discord. Command responses are ephemeral.
+Anyone in the server:
+
+```text
+/run workflow:<name> input:<message>
+```
+
+Webhook names are selectable from an autocomplete list (including `off` for `/webhook router`). `/run` only suggests workflows allowed in the current channel. Command responses for `/webhook` are ephemeral. The webhook URL is never printed back into Discord.
 
 ## 1. Create the Discord application
 
