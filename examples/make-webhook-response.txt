@@ -1,0 +1,5 @@
+This plain multi-line text can be returned directly from Make's
+Webhook response Body (for example by mapping the AI Agent Response field).
+
+The Discord bot posts it as a reply and automatically splits messages
+longer than 2,000 characters.

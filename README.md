@@ -107,7 +107,17 @@ The payload also contains nested `guild`, `channel`, `author`, `member`, `messag
 
 At the end of the Make scenario, add **Webhooks → Webhook response**.
 
-Return status `200`, header:
+Return status `200`.
+
+### Plain text (recommended for AI Agent replies)
+
+Map the agent response directly into **Body**, for example `6. Response`.
+
+Multi-line text is supported as-is. No JSON wrapping is required.
+
+### JSON body (optional)
+
+If you prefer structured JSON, set header:
 
 ```text
 Content-Type: application/json
@@ -132,9 +142,11 @@ Multiple replies are supported:
 }
 ```
 
-The bot ignores ordinary Make responses such as plain-text `Accepted`. It only posts explicit JSON fields named `reply`, `content`, `replies`, or `messages`.
+Supported JSON fields: `reply`, `content`, `replies`, or `messages`.
 
-Discord messages longer than 2,000 characters are split automatically. Mentions returned by the scenario are disabled to prevent accidental `@everyone`, role or user pings.
+The bot ignores ordinary Make responses such as plain-text `Accepted`.
+
+Discord messages longer than 2,000 characters are split automatically into multiple replies. Mentions returned by the scenario are disabled to prevent accidental `@everyone`, role or user pings.
 
 ## Optional shared-secret validation
 

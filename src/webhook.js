@@ -66,10 +66,11 @@ export async function postToWebhook({ url, payload, secret, timeoutMs }) {
       throw new Error(`Webhook returned HTTP ${response.status}${suffix}`);
     }
 
-    const data = parseJsonResponse(responseText, response.headers.get('content-type'));
+    const contentType = response.headers.get('content-type');
+    const data = parseJsonResponse(responseText, contentType);
     return {
       status: response.status,
-      replies: extractRepliesFromData(data),
+      replies: extractReplies(responseText, contentType),
       route: typeof data?.route === 'string' ? data.route.trim().toLowerCase() : null,
       data,
     };
@@ -86,7 +87,7 @@ function parseJsonResponse(responseText, contentType = '') {
 
   const normalizedContentType = String(contentType ?? '').toLowerCase();
   const trimmedResponse = responseText.trim();
-  const looksLikeJson = trimmedResponse.startsWith('{') || trimmedResponse.startsWith('[');
+  const looksLikeJson = trimmedResponse.startsWith('{') || trimmedResponse.startsWith('[') || trimmedResponse.startsWith('"');
 
   // Make can return a valid JSON body without a Content-Type header.
   if (!normalizedContentType.includes('application/json') && !looksLikeJson) return null;
@@ -94,8 +95,37 @@ function parseJsonResponse(responseText, contentType = '') {
   try { return JSON.parse(trimmedResponse); } catch { return null; }
 }
 
+function isIgnorableWebhookBody(text) {
+  const normalized = text.trim().toLowerCase();
+  return !normalized || normalized === 'accepted' || normalized === '"accepted"';
+}
+
 export function extractReplies(responseText, contentType = '') {
-  return extractRepliesFromData(parseJsonResponse(responseText, contentType));
+  const trimmed = String(responseText ?? '').trim();
+  if (isIgnorableWebhookBody(trimmed)) return [];
+
+  const parsed = parseJsonResponse(trimmed, contentType);
+
+  if (typeof parsed === 'string') {
+    const value = parsed.trim();
+    return value && !isIgnorableWebhookBody(value) ? splitDiscordMessage(value) : [];
+  }
+
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const fromFields = extractRepliesFromData(parsed);
+    if (fromFields.length) return fromFields;
+    // Valid JSON object without reply fields — do not dump it as chat text.
+    return [];
+  }
+
+  if (Array.isArray(parsed)) {
+    const strings = parsed.filter((value) => typeof value === 'string' && value.trim());
+    if (strings.length) return strings.flatMap((value) => splitDiscordMessage(value.trim()));
+    return [];
+  }
+
+  // Plain multi-line text bodies from Make (e.g. map AI Agent "Response" directly).
+  return splitDiscordMessage(trimmed);
 }
 
 function extractRepliesFromData(parsed) {

@@ -39,6 +39,21 @@ test('extracts only explicit JSON reply fields', () => {
   assert.deepEqual(extractReplies('{"status":"ok"}', 'application/json'), []);
 });
 
+test('treats plain multi-line Make bodies as Discord replies', () => {
+  const body = 'Hey Pshem!\n\n- Answer questions\n- Help with tools';
+  assert.deepEqual(extractReplies(body, 'text/plain'), [body]);
+  assert.deepEqual(extractReplies(body, ''), [body]);
+  assert.deepEqual(extractReplies(JSON.stringify(body), 'application/json'), [body]);
+});
+
+test('chunks plain-text replies over Discord message limit', () => {
+  const body = `${'A'.repeat(1_500)}\n\n${'B'.repeat(1_500)}`;
+  const replies = extractReplies(body, 'text/plain');
+  assert.ok(replies.length >= 2);
+  assert.ok(replies.every((chunk) => chunk.length <= 2_000));
+  assert.equal(replies.join('\n\n'), body);
+});
+
 test('splits long Discord replies below the limit', () => {
   const chunks = splitDiscordMessage('A'.repeat(4_500));
   assert.equal(chunks.length, 3);
