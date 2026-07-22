@@ -82,8 +82,16 @@ export async function postToWebhook({ url, payload, secret, timeoutMs }) {
 }
 
 function parseJsonResponse(responseText, contentType = '') {
-  if (!responseText || !contentType.toLowerCase().includes('application/json')) return null;
-  try { return JSON.parse(responseText); } catch { return null; }
+  if (!responseText) return null;
+
+  const normalizedContentType = String(contentType ?? '').toLowerCase();
+  const trimmedResponse = responseText.trim();
+  const looksLikeJson = trimmedResponse.startsWith('{') || trimmedResponse.startsWith('[');
+
+  // Make can return a valid JSON body without a Content-Type header.
+  if (!normalizedContentType.includes('application/json') && !looksLikeJson) return null;
+
+  try { return JSON.parse(trimmedResponse); } catch { return null; }
 }
 
 export function extractReplies(responseText, contentType = '') {
