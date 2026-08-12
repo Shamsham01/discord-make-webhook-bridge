@@ -1,278 +1,534 @@
-# Discord → Make Webhook Bridge
+---
+description: >-
+  A simple how-to for adding the bot to Discord, setting it up, and using it
+  every day.
+cover: .gitbook/assets/HookBot Banner.png
+coverY: 88.11120943199145
+layout:
+  width: default
+  cover:
+    visible: true
+    size: hero
+    mask: none
+  title:
+    visible: true
+  description:
+    visible: true
+  tableOfContents:
+    visible: true
+  outline:
+    visible: true
+  pagination:
+    visible: true
+  metadata:
+    visible: true
+  tags:
+    visible: true
+  actions:
+    visible: true
+---
 
-A lightweight, multi-server Discord bot that forwards **direct mentions** and **replies to the bot's messages** to a Make.com custom webhook configured separately by each Discord server.
+# Discord HookBot — User Guide
 
-It can also turn the webhook response into a Discord reply, so server owners can build complete Make AI chatbots without writing Discord code or connecting a separate Discord module in every Make scenario.
+This guide is for people who want to use the bot in a Discord server. You do not need to write code.
 
-## Features
+{% hint style="info" %}
+If you can click a link, type a Discord command, and follow a few steps, you can use this bot.
+{% endhint %}
 
-- Live Discord Gateway connection using `discord.js`
-- One webhook configuration per Discord guild/server
-- Admin-only `/webhook` slash command
-- Optional channel restriction
-- Triggers on direct bot mentions and replies to bot messages
-- Structured Make-friendly JSON payload
-- Attachments, author, guild, channel, roles, message URL and reply context
-- Optional shared-secret request header
-- Optional JSON webhook response → Discord reply
-- URL allow-list and HTTPS-only validation
-- Atomic JSON persistence
-- Cybrancee deployment guide and optional Dockerfile
-- Health endpoint, duplicate event protection and safe Discord reply splitting
+## What this bot does
 
-## Commands
+The bot connects your Discord server to automations you build in [Make](https://www.make.com/).
 
-Admin commands (requires **Manage Server**):
+In plain words:
 
-```text
-/webhook set name:<workflow> url:<MAKE_WEBHOOK_URL> [description:] [channel:#channel] [secret:]
+* Someone talks to the bot in Discord.
+* The bot sends that message to the right automation.
+* The automation can think, look things up, or use AI.
+* The bot posts the answer back in Discord.
+
+You can use it as a helper, a support assistant, a content tool, or anything else you set up in Make.
+
+People in the server can:
+
+* **@mention** the bot in a message
+* **Reply** to a message the bot already sent
+* Use the **`/run`** command to pick a specific automation
+
+## Add the bot to your server
+
+You need permission to add apps to the Discord server (usually **Manage Server**).
+
+1.  Open this invite link:
+
+    [Add the bot to Discord](https://discord.com/oauth2/authorize?client_id=1148676666273566760)
+2. Choose the server where you want the bot.
+3. Confirm the permissions Discord shows you.
+4. Click **Authorize**.
+
+The bot should then appear in your server’s member list.
+
+### Permissions the bot needs
+
+Please allow these when you invite it. They are what the bot uses to read messages, reply, and show that it is working:
+
+| Permission                   | Why it is needed                                             |
+| ---------------------------- | ------------------------------------------------------------ |
+| **View Channels**            | So the bot can see the rooms where people talk to it         |
+| **Send Messages**            | So it can reply                                              |
+| **Send Messages in Threads** | So it can reply inside threads too                           |
+| **Read Message History**     | So it can understand replies to its own messages             |
+| **Add Reactions**            | So it can add a small reaction (like 👀) while it is working |
+
+{% hint style="success" %}
+If a permission is missing, the bot may be online but stay silent. You can fix this later in **Server Settings → Integrations** (or **Roles**) by giving the bot those permissions again.
+{% endhint %}
+
+## Channel setup
+
+The bot can work in any text channel it is allowed to see. You do not have to create a special channel, but many servers like a dedicated one such as `#ai-chat` or `#ask-bot`.
+
+### Give the bot access
+
+In each channel where people should talk to the bot:
+
+1. Open the channel settings.
+2. Make sure the bot’s role can **View Channel**, **Send Messages**, and **Read Message History**.
+3. If you use threads, also allow **Send Messages in Threads**.
+
+### Optional: lock a workflow to one channel
+
+When you add a workflow, you can limit it to one channel (for example, only `#support`).
+
+* Mentions and replies for that workflow then work in that channel (and in threads inside it).
+* The `/run` command will only offer that workflow when you are in that channel.
+
+If you do not pick a channel, the workflow can be used anywhere the bot can see.
+
+## Set it up for the first time
+
+This part is for a server admin (someone with **Manage Server**).
+
+You will connect Discord to a Make automation using a webhook link. That link is just an address Make gives you so the bot knows where to send messages.
+
+### 1. Get a webhook link from Make
+
+1. In Make, create a scenario.
+2. Add a **Custom webhook** as the starting step.
+3. Copy the webhook URL Make shows you.
+
+Keep that link private. Treat it like a password.
+
+### 2. Save it in Discord
+
+In your Discord server, type:
+
+```
+/webhook set
+```
+
+Then fill in:
+
+* **name** — a short, easy name, such as `helper` or `support`
+* **url** — paste the Make webhook link
+* **description** — a sentence about what it does, such as `Answers general questions`
+* **channel** — optional. Pick a channel if this workflow should only work there
+* **secret** — optional. An extra password if you want Make to accept requests only from this bot
+
+Example:
+
+```
+/webhook set name:helper url:https://hook.eu1.make.com/your-link description:Answers everyday questions channel:#ai-chat
+```
+
+The first workflow you add becomes the **default** automatically. That means the bot will use it when someone mentions it or replies to it.
+
+To change a workflow later, run `/webhook set` again with the **same name**. The new details replace the old ones.
+
+{% hint style="info" %}
+Only people with **Manage Server** can use `/webhook` commands. Those replies are private, so other members do not see the setup details. The webhook link is never shown back in Discord.
+{% endhint %}
+
+### 3. Check that it works
+
+Run:
+
+```
+/webhook test name:helper
+```
+
+If Make received the test, Discord will tell you it was delivered. You can then finish your Make scenario so it sends a reply back to Discord.
+
+The full list of commands, including when and why to use each one, is in [All commands](./#all-commands).
+
+## How to talk to the bot
+
+After a default workflow is set, anyone in the server can use it.
+
+### Mention the bot
+
+Type `@` and choose the bot, then write your question.
+
+**Example**
+
+```
+@YourBot Can you summarise this meeting in three bullet points?
+```
+
+### Reply to the bot
+
+If the bot already answered, click **Reply** on that message and keep the conversation going. You do not need to mention it again.
+
+**Example**
+
+```
+Make that shorter, and add a friendly greeting.
+```
+
+While it works, the bot may add a 👀 reaction. When it is done, it replies in the same channel.
+
+## The default workflow
+
+The **default** is the everyday automation. It is what the bot uses when someone:
+
+* mentions the bot, or
+* replies to the bot
+
+and AI routing is **not** turned on.
+
+### How it is chosen
+
+* The first workflow you add is set as default for you.
+* You can change it at any time with:
+
+```
+/webhook default name:support
+```
+
+Pick the name from the list Discord shows you.
+
+### When to use it
+
+Use one default if you mostly want a single assistant, such as:
+
+* a general Q\&A bot in `#ai-chat`
+* a support helper in `#help`
+* a writing assistant for your team
+
+**Example**
+
+You save a workflow named `helper` and leave it as the default. Then this is enough:
+
+```
+@YourBot Draft a welcome message for new members.
+```
+
+The bot sends that request to `helper` and posts the answer.
+
+## AI routing
+
+AI routing is optional. Use it when you have **more than one** workflow and you want the bot to pick the right one for each message.
+
+Think of it as a receptionist:
+
+1. Someone mentions the bot or replies to it.
+2. The **router** reads the message.
+3. It chooses the best workflow, such as `support`, `billing`, or `writer`.
+4. That workflow does the real work and the bot replies.
+
+### Turn routing on
+
+1. Add each workflow with `/webhook set`, and write a clear **description** for every one. The router uses those descriptions to decide.
+2. Add one extra workflow that is only the router (the “receptionist”).
+3. Run:
+
+```
+/webhook router name:router
+```
+
+Replace `router` with the name you gave that workflow.
+
+### Turn routing off
+
+```
+/webhook router name:off
+```
+
+Mentions and replies then go back to the **default** workflow.
+
+### Example
+
+You have three workflows:
+
+| Name      | Description                                               |
+| --------- | --------------------------------------------------------- |
+| `support` | Helps with product questions and how-to                   |
+| `billing` | Answers payment, invoice, and plan questions              |
+| `writer`  | Drafts posts, replies, and announcements                  |
+| `router`  | Reads the message and chooses support, billing, or writer |
+
+Someone writes:
+
+```
+@YourBot I was charged twice this month. Can you help?
+```
+
+The router sends that to `billing`. The billing workflow answers in Discord.
+
+Someone else writes:
+
+```
+@YourBot Write a short Discord announcement about tomorrow’s update.
+```
+
+The router sends that to `writer`.
+
+{% hint style="warning" %}
+Routing only applies to **mentions** and **replies**. The `/run` command always uses the workflow you pick yourself. It does not go through the router.
+{% endhint %}
+
+## The `/run` command
+
+`/run` lets anyone in the server start a **specific** workflow on purpose. It is the “I know exactly which tool I want” option.
+
+Type:
+
+```
+/run
+```
+
+Then fill in:
+
+* **workflow** — choose from the list (only workflows allowed in this channel are shown)
+* **input** — the message or instructions for that workflow
+
+### Examples
+
+Ask the support workflow a question:
+
+```
+/run workflow:support input:How do I reset my password?
+```
+
+Ask the writer workflow to draft something:
+
+```
+/run workflow:writer input:Write a friendly 2-sentence welcome for new members.
+```
+
+Ask a billing workflow:
+
+```
+/run workflow:billing input:What is included in the Pro plan?
+```
+
+The bot will show that it is working, then post the result in the channel.
+
+If a workflow is limited to one channel, `/run` only works there. Discord will tell you if you are in the wrong place.
+
+## All commands
+
+There are two command families:
+
+* **`/webhook ...`** — for server admins (**Manage Server**). Used to add, check, and organise workflows. Replies are private.
+* **`/run`** — for everyone. Used to start a specific workflow.
+
+When you type a command, Discord often shows a list of workflow names. Pick from that list instead of guessing.
+
+| Command            | Who can use it | Use it to                                 |
+| ------------------ | -------------- | ----------------------------------------- |
+| `/webhook set`     | Admins         | Add or update a workflow                  |
+| `/webhook list`    | Admins         | See every workflow on this server         |
+| `/webhook status`  | Admins         | Check one workflow’s details              |
+| `/webhook test`    | Admins         | Check that Make is receiving messages     |
+| `/webhook remove`  | Admins         | Delete a workflow you no longer need      |
+| `/webhook default` | Admins         | Choose what runs for mentions and replies |
+| `/webhook router`  | Admins         | Turn AI routing on or off                 |
+| `/run`             | Everyone       | Start a specific workflow yourself        |
+
+### `/webhook set`
+
+**Why:** This is how you connect Discord to a Make automation. Without it, the bot has nothing to run.
+
+**When:** First-time setup, when you add a new helper, or when you need to change a link, description, channel, or secret.
+
+**How:** Type `/webhook set`, then fill in:
+
+| Field           | Required? | What to put                                                                              |
+| --------------- | --------- | ---------------------------------------------------------------------------------------- |
+| **name**        | Yes       | A short name, such as `support` or `writer`. Use the same name later to update it.       |
+| **url**         | Yes       | The webhook link from Make                                                               |
+| **description** | No        | What this workflow does. People see this in `/run`, and the AI router uses it to choose. |
+| **channel**     | No        | Limit the workflow to one channel                                                        |
+| **secret**      | No        | An extra password, only if your Make scenario checks for one                             |
+
+**Example — add a support helper**
+
+```
+/webhook set name:support url:https://hook.eu1.make.com/your-link description:Helps with product questions channel:#help
+```
+
+**Example — update the description later**
+
+```
+/webhook set name:support url:https://hook.eu1.make.com/your-link description:Helps with product questions and how-to
+```
+
+{% hint style="info" %}
+Names should stay short and simple: letters, numbers, dashes, or underscores. Discord will offer existing names as you type.
+{% endhint %}
+
+### `/webhook list`
+
+**Why:** So you can see what is already set up, which one is the default, and which one is the AI router.
+
+**When:** After setup, before changing anything, or when someone says the bot is using the wrong helper.
+
+**How:**
+
+```
 /webhook list
-/webhook status name:<workflow>
-/webhook test name:<workflow>
-/webhook remove name:<workflow>
-/webhook default name:<workflow>
-/webhook router name:<workflow|off>
 ```
 
-Anyone in the server:
+You will see every workflow, plus labels such as _default_ or _AI router_.
 
-```text
-/run workflow:<name> input:<message>
+**Example result**
+
+* **helper** _(default)_ — Answers everyday questions
+* **billing** — Answers payment questions
+* **router** _(AI router)_ — Chooses the right workflow
+
+### `/webhook status`
+
+**Why:** To inspect one workflow in more detail than the list, without exposing the secret webhook link.
+
+**When:** You want to check where it is allowed to run, whether it is the default or the router, or whether a secret is set.
+
+**How:**
+
+```
+/webhook status name:support
 ```
 
-Webhook names are selectable from an autocomplete list (including `off` for `/webhook router`). `/run` only suggests workflows allowed in the current channel. Command responses for `/webhook` are ephemeral. The webhook URL is never printed back into Discord.
+Pick the name from the list Discord shows.
 
-## 1. Create the Discord application
+**Example:** Use this if `/run` says a workflow can only be used in another channel, and you need to confirm which channel that is.
 
-1. Open the Discord Developer Portal and create a new application.
-2. Open **Bot** and create/reset the bot token.
-3. Enable **Message Content Intent** under **Privileged Gateway Intents**.
-   - This is required for messages that reply to the bot without mentioning it.
-4. Copy the token into `.env` as `DISCORD_TOKEN`.
+### `/webhook test`
 
-For unverified bots, Message Content Intent must be enabled but does not require approval. Verified/verification-eligible bots may need Discord approval.
+**Why:** To check the connection to Make before people start using the bot, or when something stops working.
 
-## 2. Invite the bot
+**When:** Right after `/webhook set`, after you change a Make scenario, or when mentions and `/run` fail.
 
-In **OAuth2 → URL Generator**, select:
+**How:**
 
-- Scopes: `bot`, `applications.commands`
-- Bot permissions:
-  - View Channels
-  - Send Messages
-  - Send Messages in Threads
-  - Read Message History
-  - Add Reactions
-
-Open the generated URL and invite the bot to your server.
-
-## 3. Run locally
-
-```bash
-cp .env.example .env
-npm install
-npm test
-npm start
+```
+/webhook test name:helper
 ```
 
-The bot registers `/webhook` as a guild command when it starts and whenever it joins a new server.
+If it works, Discord says the test was delivered. If it fails, fix the Make link or scenario, then test again.
 
-## 4. Configure a Make scenario
+{% hint style="warning" %}
+A successful test means Make received the message. It does not always mean Make is already sending a nice reply back. Finish the Make scenario if the bot still has nothing useful to post.
+{% endhint %}
 
-1. Create a Make scenario.
-2. Add **Webhooks → Custom webhook**.
-3. Copy the generated Make webhook URL.
-4. In Discord, run:
+### `/webhook remove`
 
-```text
-/webhook set url:https://hook.eu1.make.com/your-webhook-id channel:#ai-chat
+**Why:** To delete a workflow you no longer need, so people cannot run it by mistake.
+
+**When:** A helper is retired, a Make scenario was replaced, or you added a test workflow you do not want to keep.
+
+**How:**
+
+```
+/webhook remove name:old-helper
 ```
 
-5. Run `/webhook test`.
-6. In Make, process the incoming JSON using your AI Agent or other modules.
+**What happens next**
 
-### Important Make fields
+* That name disappears from `/run` and `/webhook list`.
+* If it was the **default**, the bot picks another remaining workflow as default.
+* If it was the **AI router**, routing is turned off.
 
-The most convenient top-level fields are:
+{% hint style="danger" %}
+This cannot be undone from Discord. You would need to add the workflow again with `/webhook set`.
+{% endhint %}
 
-```json
-{
-  "event": "discord.message",
-  "trigger": "mention",
-  "guildId": "...",
-  "channelId": "...",
-  "messageId": "...",
-  "authorId": "...",
-  "content": "The message with the bot mention removed",
-  "rawContent": "<@BOT_ID> The original message",
-  "messageUrl": "https://discord.com/channels/...",
-  "attachments": []
-}
+### `/webhook default`
+
+**Why:** Mentions and replies need one everyday workflow. This command chooses which one that is.
+
+**When:** You have more than one workflow and want a different one to answer `@Bot` messages. Also use it after you add a better main helper.
+
+**How:**
+
+```
+/webhook default name:support
 ```
 
-The payload also contains nested `guild`, `channel`, `author`, `member`, `message`, and `bot` objects.
+The first workflow you add is already the default. You only need this command when you want to change it.
 
-## 5. Reply from Make through this bot
+**Example:** You started with `helper`, then built a stronger `support` workflow. Set `support` as default so everyday mentions go there. People can still use `/run` for the others.
 
-At the end of the Make scenario, add **Webhooks → Webhook response**.
+See [The default workflow](./#the-default-workflow) for more.
 
-Return status `200`.
+### `/webhook router`
 
-### Plain text (recommended for AI Agent replies)
+**Why:** So the bot can read a mention or reply and send it to the best workflow, instead of always using the default.
 
-Map the agent response directly into **Body**, for example `6. Response`.
+**When:** You have several helpers (support, billing, writing, and so on) and you do not want people to pick with `/run` every time.
 
-Multi-line text is supported as-is. No JSON wrapping is required.
+**How to turn on:**
 
-### JSON body (optional)
-
-If you prefer structured JSON, set header:
-
-```text
-Content-Type: application/json
+```
+/webhook router name:router
 ```
 
-And a body such as:
+Use the name of the workflow that should act as the receptionist. Give every other workflow a clear description first, so the router can choose well.
 
-```json
-{
-  "reply": "This response will be posted as a reply in Discord."
-}
+**How to turn off:**
+
+```
+/webhook router name:off
 ```
 
-Multiple replies are supported:
+Mentions and replies then use the default workflow again.
 
-```json
-{
-  "replies": [
-    "First message",
-    "Second message"
-  ]
-}
+See [AI routing](./#ai-routing) for a full example.
+
+### `/run`
+
+**Why:** So anyone can start a **specific** workflow, even if it is not the default and even if routing is on.
+
+**When:** You already know which helper you want, or you want to skip the router.
+
+**How:** Type `/run`, pick a **workflow** from the list, then type your **input**.
+
+```
+/run workflow:writer input:Write a friendly 2-sentence welcome for new members.
 ```
 
-Supported JSON fields: `reply`, `content`, `replies`, or `messages`.
+* Anyone in the server can use it.
+* The result is posted in the channel, not as a private reply.
+* Only workflows allowed in the current channel appear in the list.
 
-The bot ignores ordinary Make responses such as plain-text `Accepted`.
+See [The `/run` command](./#the-run-command) for more examples.
 
-Discord messages longer than 2,000 characters are split automatically into multiple replies. Mentions returned by the scenario are disabled to prevent accidental `@everyone`, role or user pings.
+## Quick comparison
 
-## Optional shared-secret validation
+| What you do                    | What happens                                                      |
+| ------------------------------ | ----------------------------------------------------------------- |
+| `@Bot your question`           | Uses the **default** workflow, or the **router** if routing is on |
+| Reply to the bot               | Same as above, and continues the conversation                     |
+| `/run workflow:name input:...` | Always runs the workflow you chose                                |
 
-Configure a secret:
+## Everyday tips
 
-```text
-/webhook set url:https://hook.eu1.make.com/... secret:your-random-secret
-```
+* Give each workflow a clear name and description. That helps people using `/run`, and it helps the router choose well.
+* Start simple: one default workflow in one channel. Add routing later if you need several helpers.
+* If nothing happens when you mention the bot, check that it can see the channel and that a default workflow is set (`/webhook list`).
+* If a command does not appear, try typing `/` and looking for `webhook` or `run`. You may need to wait a moment after inviting the bot, or kick and re-invite it with the [install link](https://discord.com/oauth2/authorize?client_id=1148676666273566760).
 
-The bot sends it in this request header:
+## Need help?
 
-```text
-x-discord-bridge-secret: your-random-secret
-```
-
-Validate or filter that header near the start of your Make scenario. It helps ensure the scenario only processes calls from your bridge instance.
-
-## Configuration storage
-
-Guild settings are stored in `DATA_FILE`, defaulting to:
-
-```text
-./data/guilds.json
-```
-
-Example runtime record:
-
-```json
-{
-  "123456789012345678": {
-    "webhookUrl": "https://hook.eu1.make.com/...",
-    "secret": null,
-    "channelId": "234567890123456789",
-    "updatedAt": "2026-07-17T08:00:00.000Z",
-    "updatedBy": "345678901234567890"
-  }
-}
-```
-
-`data/*.json` is ignored by Git. Webhook URLs should be treated as secrets.
-
-### Hosting warning
-
-The JSON store is suitable for one bot process and a modest number of servers. Back up `.env` and `data/guilds.json` before reinstalling, migrating, or clearing the Cybrancee server files.
-
-For multiple replicas or a larger public bot, replace the JSON store with PostgreSQL, Supabase, Redis or another shared database.
-
-## Cybrancee deployment
-
-See the complete [Cybrancee deployment guide](CYBRANCEE.md).
-
-Use these Startup settings:
-
-| Cybrancee setting | Value |
-|---|---|
-| Git Repo Address | `https://github.com/Shamsham01/discord-make-webhook-bridge` |
-| Git Branch | `main` |
-| Auto Update | Enabled |
-| Node.js version / Docker Image | Node.js 20 or Node.js 22 |
-| Bot JS File | `src/index.js` |
-| Additional Node Packages | `discord.js dotenv` |
-
-For the initial Git installation, Cybrancee requires an empty file manager. Configure the Git fields, use **Reinstall Server → Delete current files and reinstall server**, then restart so the repository is pulled.
-
-> Reinstalling permanently deletes current server files. Back up an existing `.env` and `data/guilds.json` first.
-
-After the repository is installed, create `.env` in the project root using `.env.example` as the template. At minimum, set:
-
-```env
-DISCORD_TOKEN=your_discord_bot_token
-DATA_FILE=./data/guilds.json
-```
-
-The included health server exposes:
-
-```text
-GET /health
-```
-
-The Discord bridge itself does not require a public HTTP endpoint; it connects outbound to Discord and Make.
-
-## Environment variables
-
-| Variable | Required | Default | Purpose |
-|---|---:|---|---|
-| `DISCORD_TOKEN` | Yes | — | Discord bot token |
-| `DATA_FILE` | No | `./data/guilds.json` | Persistent guild configuration |
-| `WEBHOOK_TIMEOUT_MS` | No | `120000` | Maximum Make scenario response time |
-| `ALLOWED_WEBHOOK_HOSTS` | No | `*.make.com` | Allowed webhook host patterns |
-| `ACK_REACTION` | No | `👀` | Reaction while processing |
-| `SUCCESS_REACTION` | No | blank | Reaction after successful delivery |
-| `ERROR_REACTION` | No | `⚠️` | Reaction after failed delivery |
-| `SHOW_DELIVERY_ERRORS` | No | `true` | Post a generic failure reply |
-| `PORT` | No | `3000` | Health server port |
-
-## Security notes
-
-- The default allow-list accepts HTTPS endpoints below `make.com` only.
-- Avoid setting `ALLOWED_WEBHOOK_HOSTS=*` on a public multi-tenant bot because administrators could make the service request arbitrary destinations.
-- Redirects are rejected so an allowed URL cannot redirect the bot to a disallowed host.
-- Webhook URLs and optional secrets are stored in the local JSON file. Protect and back up the Cybrancee server files.
-- The bot ignores messages from bots and Discord webhooks to prevent loops.
-- Discord output from Make is sent with mentions disabled.
-
-## Suggested production upgrades
-
-The most useful next upgrades for a larger public service are:
-
-1. Database-backed encrypted configuration.
-2. Per-guild rate limits and monthly usage quotas.
-3. Multiple named agents/webhooks per server or channel.
-4. Signed webhook requests using HMAC and timestamps.
-5. Conversation/thread IDs and short-term chat history.
-6. An admin dashboard and install analytics.
-7. Retry queue with idempotency keys and a dead-letter log.
-8. Sharding when the bot grows to thousands of servers.
-
-## License
-
-MIT
+Ask a server admin to run `/webhook list` and `/webhook test` on the workflow you expected to run. If the test succeeds, the connection to Make is working, and the next place to check is the Make scenario itself.
