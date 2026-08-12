@@ -2,13 +2,13 @@
 description: >-
   A simple how-to for adding the bot to Discord, setting it up, and using it
   every day.
-cover: .gitbook/assets/HookBot Banner.png
-coverY: 88.11120943199145
+cover: .gitbook/assets/HookBot Gitbook Cover.png
+coverY: 0
 layout:
   width: default
   cover:
     visible: true
-    size: hero
+    size: full
     mask: none
   title:
     visible: true
