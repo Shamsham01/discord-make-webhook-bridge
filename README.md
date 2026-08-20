@@ -432,6 +432,18 @@ If it works, Discord says the test was delivered. If it fails, fix the Make link
 A successful test means Make received the message. It does not always mean Make is already sending a nice reply back. Finish the Make scenario if the bot still has nothing useful to post.
 {% endhint %}
 
+{% hint style="info" %}
+If a workflow takes longer than about a minute, Make often replies with **Accepted** and keeps running in the background. Raising `WEBHOOK_TIMEOUT_MS` does not change Make’s own webhook hold time.
+
+For long Agents:
+
+1. Set `PUBLIC_BASE_URL` to this bot’s public HTTPS URL.
+2. In Make, after the Agent, add an **HTTP** module that POSTs the Agent text to the `callbackUrl` field from the webhook payload.
+3. Send header `x-callback-token` with the `callbackToken` value from the same payload.
+
+Scenarios that finish while Make is still holding the original webhook (usually under 1–2 minutes) can keep using **Webhook response** as before.
+{% endhint %}
+
 ### `/webhook remove`
 
 **Why:** To delete a workflow you no longer need, so people cannot run it by mistake.
