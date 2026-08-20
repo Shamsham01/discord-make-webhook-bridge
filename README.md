@@ -30,10 +30,10 @@ layout:
 
 # Discord HookBot — User Guide
 
-HookBot connects your Discord server to automations you build in [Make](https://www.make.com/). Someone talks to the bot in Discord; the bot sends the message to Make; Make runs your scenario (AI Agent, tools, lookups); the bot posts the answer back in the channel.
+HookBot connects your Discord server to automations you build in [Make](https://www.make.com/). Someone @HookBot or replies to HookBot; HookBot sends the message to Make; Make runs your scenario (AI Agent, tools, lookups); the answer appears in Discord.
 
 {% hint style="info" %}
-You do not need to write code to **use** the bot in Discord. Make engineers configure scenarios; Discord admins run `/webhook` commands to connect them.
+You do not need to write code to **use** HookBot in Discord. Make engineers configure scenarios; Discord admins run `/webhook` commands to connect them.
 {% endhint %}
 
 ## Who this guide is for
@@ -49,24 +49,23 @@ You do not need to write code to **use** the bot in Discord. Make engineers conf
 
 | Action | Who | What happens |
 | --- | --- | --- |
-| **@mention** the bot | Everyone | Sends the message to the default workflow, or the AI router if enabled |
-| **Reply** to the bot | Everyone | Same as @mention — continues the conversation |
+| **@HookBot** in a message | Everyone | Sends the message to the default workflow, or the AI router if enabled |
+| **Reply** to @HookBot | Everyone | Same as @mention — continues the conversation |
 | **`/run`** | Everyone | Runs a specific workflow by name |
 | **`/webhook ...`** | Admins (Manage Server) | Add, test, and organise Make workflows |
 
 ## Quick start (Discord admin)
 
-1. [Add the bot to your server](docs/discord-setup.md#add-the-bot-to-your-server)
-2. Enable **Message Content Intent** in the Discord Developer Portal
-3. In Make, create a scenario with **Custom webhook** → your logic → **Webhook response**
-4. In Discord:
+1. [Add HookBot to your server](docs/discord-setup.md#add-hookbot-to-your-server)
+2. In Make, create a scenario with **Custom webhook** → your logic → **Webhook response** (or Make **Discord** module for long AI workflows — see [Make integration](docs/make-integration.md))
+3. In Discord:
 
 ```
 /webhook set name:helper url:https://hook.eu1.make.com/your-link description:Answers everyday questions channel:#ai-chat
 /webhook test name:helper
 ```
 
-5. @mention the bot in `#ai-chat`
+4. @HookBot in `#ai-chat`
 
 [Full setup walkthrough →](docs/discord-setup.md)
 
@@ -74,9 +73,7 @@ You do not need to write code to **use** the bot in Discord. Make engineers conf
 
 1. Module 1: **Custom webhook** (URL goes into Discord `/webhook set`)
 2. Middle: AI Agent, filters, knowledge base, etc. — map `content` from the webhook bundle
-3. Last module: **Webhook response** with Agent output, e.g. `{ "reply": "{{Response}}" }` or plain text
-
-Do **not** add an HTTP module calling back to the bot host. See [Make integration guide](docs/make-integration.md).
+3. Last module: **Webhook response** with Agent output, e.g. `{ "reply": "{{Response}}" }` or plain text — or use Make’s **Discord** module for long AI workflows (see [Make integration guide](docs/make-integration.md))
 
 ## AI routing (optional)
 
@@ -100,4 +97,4 @@ When you have several workflows, add a **router** Make scenario that returns `{ 
 
 [Add HookBot to Discord](https://discord.com/oauth2/authorize?client_id=1148676666273566760)
 
-Requires **Manage Server** to configure workflows. Anyone can @mention the bot or use `/run` once a workflow is set up.
+Requires **Manage Server** to configure workflows. Anyone can @HookBot or use `/run` once a workflow is set up.

@@ -1,10 +1,10 @@
 # AI routing
 
-AI routing is **optional**. Use it when you have **more than one** Make workflow and want the bot to pick the best one for each @mention or reply — without users typing `/run` every time.
+AI routing is **optional**. Use it when you have **more than one** Make workflow and want HookBot to pick the best one for each @HookBot message or reply — without users typing `/run` every time.
 
 Think of it as a receptionist:
 
-1. Someone @mentions the bot or replies to it
+1. Someone @HookBot or replies to HookBot
 2. The **router** Make scenario reads the message
 3. It returns which workflow should handle it (`support`, `billing`, `writer`, …)
 4. The bot calls that workflow’s Make scenario
@@ -25,7 +25,7 @@ Routing applies only to **@mentions** and **replies**. The `/run` command always
 ## Overview diagram
 
 ```
-User @mentions bot in Discord
+User @HookBot in Discord
         │
         ▼
 Bot POSTs to router Make webhook
@@ -41,7 +41,7 @@ Bot POSTs same payload to billing Make webhook
 Billing scenario returns answer → bot posts in Discord
 ```
 
-The router does **not** call other Make scenarios itself. The **bot** performs the second HTTP request after it reads `route`.
+The router does **not** call other Make scenarios itself. HookBot sends the second request after it reads `route`.
 
 ## Step 1 — Register worker workflows
 
@@ -80,9 +80,9 @@ Create a **separate** Make scenario:
 
 `route` must exactly match a name from `/webhook set` (letters, numbers, dashes, underscores; case-insensitive).
 
-The router should **not** return the final user-facing answer unless you intentionally want the router to reply directly (if `route` is omitted, the bot posts whatever the router returned).
+The router should **not** return the final user-facing answer unless you intentionally want the router to reply directly (if `route` is omitted, HookBot posts whatever the router returned).
 
-## Step 3 — Register the router with the bot
+## Step 3 — Register the router with HookBot
 
 Register the router like any other workflow:
 
@@ -90,7 +90,7 @@ Register the router like any other workflow:
 /webhook set name:router url:https://hook.eu1.make.com/YOUR_ROUTER_HOOK description:Routes messages to the best workflow
 ```
 
-Then tell the bot this workflow is the AI router:
+Then tell HookBot this workflow is the AI router:
 
 ```
 /webhook router name:router
@@ -106,10 +106,10 @@ Verify with `/webhook list` — you should see **router** labelled _(AI router)_
 /webhook test name:router
 ```
 
-Then @mention the bot with a message that should clearly map to one worker, e.g.:
+Then @HookBot with a message that should clearly map to one worker, e.g.:
 
 ```
-@YourBot I was charged twice this month
+@HookBot I was charged twice this month
 ```
 
 Check Make execution history: router scenario first, then the chosen worker scenario.
@@ -126,10 +126,10 @@ Check Make execution history: router scenario first, then the chosen worker scen
 
 Each workflow can be limited to one Discord channel via `/webhook set ... channel:#...`.
 
-When someone @mentions the bot:
+When someone @HookBot:
 
-1. The bot tries the **router** first — only if that workflow is allowed in the current channel
-2. If the router is blocked for this channel, the bot tries the **default** workflow instead
+1. HookBot tries the **router** first — only if that workflow is allowed in the current channel
+2. If the router is blocked for this channel, HookBot tries the **default** workflow instead
 3. If the router picks a target workflow, that target must also be allowed in the current channel
 
 Example:
@@ -139,8 +139,8 @@ Example:
 | `router` | `#staff` only |
 | `nft-flipping-agent` (default) | `#ai-chat` only |
 
-* @mention in `#ai-chat` → default runs (router skipped)
-* @mention in `#staff` → router runs, then routes to a worker
+* @HookBot in `#ai-chat` → default runs (router skipped)
+* @HookBot in `#staff` → router runs, then routes to a worker
 
 ## Example router prompt (conceptual)
 
@@ -163,7 +163,7 @@ In Make, map the AI output into the Webhook response body. You may need a JSON p
 | Using the router URL as a worker URL | Wrong scenario runs or duplicate triggers |
 | Router returns prose instead of `{ "route": "..." }` | Bot may post router text or show no useful reply |
 | `route` name not registered in Discord | Error in Discord; check bot logs |
-| Worker scenario missing Webhook response | Bot calls worker but posts nothing |
+| Worker scenario never posts to Discord | Add Webhook response or Discord module output |
 | Vague workflow descriptions | Router picks the wrong workflow |
 
 ## Related pages
