@@ -20,6 +20,7 @@ export const env = Object.freeze({
   discordToken: optionalString(process.env.DISCORD_TOKEN),
   dataFile: path.resolve(process.env.DATA_FILE || './data/guilds.json'),
   webhookTimeoutMs: parsePositiveInteger(process.env.WEBHOOK_TIMEOUT_MS, 120_000),
+  publicBaseUrl: optionalString(process.env.PUBLIC_BASE_URL) || optionalString(process.env.RENDER_EXTERNAL_URL),
   allowedWebhookHosts: (process.env.ALLOWED_WEBHOOK_HOSTS || '*.make.com')
     .split(',')
     .map((entry) => entry.trim().toLowerCase())
