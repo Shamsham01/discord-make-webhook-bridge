@@ -88,7 +88,7 @@ Edit **`.env`** for secrets and timeouts. Do not rely on editing `.env.example` 
 | --- | --- | --- |
 | `DISCORD_TOKEN` | _(required)_ | Bot token from Discord Developer Portal |
 | `DATA_FILE` | `./data/guilds.json` | Where workflow config is stored |
-| `WEBHOOK_TIMEOUT_MS` | `120000` | How long the bot waits for Make’s HTTP response |
+| `WEBHOOK_TIMEOUT_MS` | `120000` | How long HookBot waits for Make’s webhook response |
 | `ALLOWED_WEBHOOK_HOSTS` | `*.make.com` | Host allow-list for webhook URLs |
 | `ACK_REACTION` | _(optional)_ | Reaction while working, e.g. `👀` |
 | `SUCCESS_REACTION` | _(optional)_ | Reaction on success |
@@ -109,16 +109,15 @@ Check:
 * `.env` exists with a valid `DISCORD_TOKEN` (no quotes or extra spaces)
 * Console for startup errors
 
-### Bot is online but @mentions do nothing
+### Bot is online but @HookBot does nothing
 
 Check in order:
 
-1. **Message Content Intent** enabled in Discord Developer Portal → Bot → Privileged Gateway Intents
-2. Bot can **View Channel** and **Read Message History** in that channel
-3. `/webhook list` shows a **default** workflow
-4. You are in the channel allowed for the default (or router), if one was set
-5. AI routing: run `/webhook router name:off` to test without the router
-6. Host logs for `Mention/reply ignored ... (no workflow allowed in this channel)`
+1. HookBot can **View Channel** and **Read Message History** in that channel
+2. `/webhook list` shows a **default** workflow
+3. You are in the channel allowed for the default (or router), if one was set
+4. AI routing: run `/webhook router name:off` to test without the router
+5. Host logs for `Mention/reply ignored ... (no workflow allowed in this channel)`
 
 ### Slash commands do not appear
 
@@ -126,27 +125,27 @@ Check in order:
 * Wait a minute after invite, or kick and re-invite
 * Restart the bot (registers commands on startup)
 
-### `/webhook test` succeeds but @mention gets no reply
+### `/webhook test` succeeds but @HookBot gets no reply
 
 * Make received the request — the scenario may not return a reply body
-* Add **Webhook response** as the last module and map Agent output into it
-* See [Make integration](make-integration.md)
-* If Make returns only `Accepted`, the bot posts nothing
+* Short workflows: add **Webhook response** and map Agent output into it
+* Long AI workflows: use Make’s **Discord** module with `channelId` and `messageId` from the webhook payload (see [Make integration](make-integration.md))
+* If Make returns only `Accepted`, HookBot posts nothing unless Make posts via the Discord module
 
 ### “Completed successfully” with no text (`/run`)
 
-Make returned HTTP 200 with an empty or `Accepted` body. Map Agent output into the **Webhook response** module.
+Make returned a success with an empty or `Accepted` body. Map Agent output into **Webhook response**, or post via Make’s **Discord** module for long scenarios.
 
 ### Webhook timed out
 
 * Agent or scenario runs longer than `WEBHOOK_TIMEOUT_MS` — increase in `.env`
-* Make has its own webhook hold limits; very long runs may need scenario redesign
+* Long AI workflows: use Make’s **Discord** module instead of holding **Webhook response** open — see [Make integration](make-integration.md)
 
 ### Workflow configuration disappeared
 
 `data/guilds.json` was deleted (common after Cybrancee reinstall). Restore from backup or re-run `/webhook set` for each workflow.
 
-### Wrong workflow runs on @mention
+### Wrong workflow runs when someone @HookBot
 
 * `/webhook list` — check which is **default** and **AI router**
 * If routing is on, mentions hit the router first (when allowed in channel)

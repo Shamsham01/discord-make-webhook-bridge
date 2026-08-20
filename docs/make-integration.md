@@ -2,33 +2,41 @@
 
 This page is for **Make engineers** building or maintaining scenarios that receive Discord messages and send replies back.
 
-The bot POSTs JSON to your **Custom webhook** URL and waits for the HTTP response. Put your Agent output in a **Webhook response** module at the end of the scenario.
+HookBot POSTs JSON to your **Custom webhook** URL when someone @HookBot, replies to HookBot, or uses `/run`.
 
-{% hint style="warning" %}
-Do **not** add a final **HTTP** module that calls back to the Discord bot host. The bot reads the reply from Make’s **Webhook response** body only. An HTTP callback requires HTTPS on the bot side and is not supported in the current version.
-{% endhint %}
+## Scenario patterns
 
-## Scenario pattern (worker workflow)
+### Short workflows — Webhook response
 
-Every workflow the bot can run (default, `/run` targets, router targets) should follow this shape:
+For quick automations (under roughly one to two minutes), end with **Webhook response** and map your output into the body:
 
 ```
 Custom webhook  →  your logic / AI Agent  →  Webhook response
 ```
 
 1. **Custom webhook** — trigger; URL is what you paste into `/webhook set`
-2. **Middle modules** — AI Agent, tools, knowledge base, filters, etc.
-3. **Webhook response** — last module; body contains the text Discord should post
+2. **Middle modules** — AI Agent, filters, knowledge base, etc.
+3. **Webhook response** — body contains the text HookBot posts in Discord
 
-### Long-running AI Agents
+HookBot waits for this response and posts the result as a reply to the user’s message.
 
-Make may hold the webhook connection open while the Agent runs. If the Agent takes longer than the bot’s timeout, Discord shows an error.
+### Long workflows — Make Discord module
 
-The host sets `WEBHOOK_TIMEOUT_MS` (default 120 seconds). For slow Agents, increase it in the bot’s `.env` (e.g. `500000` for ~8 minutes). Make still has its own webhook hold limits — design scenarios accordingly.
+{% hint style="tip" %}
+For **long AI workflows** (Agents with tool calling, multi-step research, etc.), avoid holding **Webhook response** open until everything finishes — Make and HookBot both have timeouts.
 
-If Make returns `Accepted` with no reply body, the bot treats that as success with **no Discord message**. Always map Agent output into the **Webhook response** body.
+Instead:
 
-## What the bot sends to Make
+1. Let the Custom webhook trigger complete (optionally return a short acknowledgement from **Webhook response**, or none)
+2. Run your Agent and tools in the background
+3. Use Make’s native **Discord** module to post the final answer
+
+Map **`channelId`** and **`messageId`** from the initial Custom webhook payload — HookBot already sends both. Use them in **Create a Message** (or reply to that message) so the answer appears in the same channel and thread as the user’s @HookBot message.
+
+This pattern works well when the scenario may run for many minutes while tools or sub-agents execute.
+{% endhint %}
+
+## What HookBot sends to Make
 
 Each request is `POST` with `Content-Type: application/json`.
 
@@ -47,7 +55,7 @@ Validate the secret in Make if you configured one (optional but recommended for 
 
 | `event` value | When it fires |
 | --- | --- |
-| `discord.message` | @mention or reply to the bot |
+| `discord.message` | @HookBot or reply to HookBot |
 | `discord.workflow.run` | Someone used `/run` |
 | `discord.webhook.test` | Admin ran `/webhook test` |
 
@@ -55,15 +63,15 @@ Validate the secret in Make if you configured one (optional but recommended for 
 
 | Field | Description |
 | --- | --- |
-| `content` | User message with the bot @mention stripped |
+| `content` | User message with the @HookBot mention stripped |
 | `rawContent` | Original Discord message text |
 | `trigger` | `mention`, `reply`, or `mention+reply` |
 | `workflow` | Name of the workflow being invoked |
-| `guildId`, `channelId`, `messageId`, `authorId` | IDs for logging and threading |
+| `guildId`, `channelId`, `messageId`, `authorId` | IDs for logging, Discord module mapping, and threading |
 | `messageUrl` | Link to the Discord message |
 | `attachments` | Array of attachment metadata (URLs, names, types) |
 | `author`, `guild`, `channel`, `member` | Structured context for mapping |
-| `message.referencedMessage` | Prior message when user replied to the bot |
+| `message.referencedMessage` | Prior message when user replied to HookBot |
 | `availableWorkflows` | All registered workflows (name, description, channelId) — useful for routers |
 | `routing` | `{ "enabled": true/false, "routerWorkflow": "..." }` |
 
@@ -75,15 +83,17 @@ A full example payload is in the repository at `examples/sample-discord-payload.
 * `trigger`: `slash-command`
 * `content` / `rawContent`: the **input** option from `/run`
 
+Note: `/run` uses the slash command interaction ID as `messageId`, not a channel message — prefer the **Webhook response** pattern for `/run` unless you map channel context differently.
+
 ### Test payload
 
 * `event`: `discord.webhook.test`
 * `trigger`: `command`
 * `content`: `"Webhook bridge test"`
 
-## What Make should return
+## What Make should return (Webhook response path)
 
-The bot parses the **Webhook response** HTTP body. Supported formats:
+When you use **Webhook response**, HookBot parses the response body. Supported formats:
 
 ### JSON with a reply field
 
@@ -110,17 +120,17 @@ Line two of the answer
 
 Example: `examples/make-webhook-response.txt`
 
-Messages longer than 2,000 characters are split automatically.
+Messages longer than 2,000 characters are split automatically when HookBot posts them.
 
 ### Ignored bodies
 
-These are treated as “success, no Discord reply”:
+These are treated as “success, no Discord reply” from HookBot:
 
 * Empty body
 * `Accepted`
 * `"Accepted"`
 
-If users see “completed successfully” with no text, your scenario likely returned `Accepted` without mapping Agent output to the Webhook response.
+If users see “completed successfully” with no text on `/run`, your scenario likely returned `Accepted` without a reply body. For long workflows, switch to the **Discord** module pattern above.
 
 ### AI router: return a route, not the final answer
 
@@ -132,14 +142,14 @@ The **router** scenario should usually return:
 }
 ```
 
-`route` must match a workflow **name** registered in Discord via `/webhook set`. The bot then POSTs the same Discord payload to that workflow’s Make URL and posts **that** scenario’s reply in Discord.
+`route` must match a workflow **name** registered in Discord via `/webhook set`. HookBot then POSTs the same Discord payload to that workflow’s Make URL and posts **that** scenario’s reply in Discord.
 
 See [AI routing](ai-router.md) for the full two-step flow.
 
 ## Example: simple Q&A scenario
 
 1. **Custom webhook** — copy URL → `/webhook set name:helper url:...`
-2. **AI Agent** (or other modules) — map `content` from the webhook bundle into the Agent input
+2. **AI Agent** — map `content` from the webhook bundle into the Agent input
 3. **Webhook response** — body:
 
 ```json
@@ -149,6 +159,14 @@ See [AI routing](ai-router.md) for the full two-step flow.
 ```
 
 Or map the Agent Response as plain text in the body field.
+
+## Example: long Agent with Discord module
+
+1. **Custom webhook** — receives payload with `channelId`, `messageId`, `content`
+2. **AI Agent** (+ tools) — runs as long as needed
+3. **Discord → Create a Message** (or equivalent) — channel = `channelId`, reply/thread using `messageId` as needed, message = Agent output
+
+No Webhook response body required for the final answer — Make posts directly to Discord.
 
 ## Example: scenario with optional secret
 
@@ -165,6 +183,8 @@ In Make, after the Custom webhook, add a filter or router that checks header `x-
 | Discord field | Typical Make use |
 | --- | --- |
 | `content` | Main user question for the Agent |
+| `channelId` | Target channel for Discord module replies |
+| `messageId` | Reply to the triggering @HookBot message |
 | `author.displayName` | Personalise replies |
 | `channel.name` | Channel-aware behaviour |
 | `message.referencedMessage.content` | Conversation context on replies |
@@ -174,10 +194,10 @@ In Make, after the Custom webhook, add a filter or router that checks header `x-
 ## Checklist before go-live
 
 - [ ] Custom webhook is module 1
-- [ ] Webhook response is the **last** module
-- [ ] Agent (or final) output is mapped into the response body
+- [ ] Short scenarios: **Webhook response** maps Agent output into the body
+- [ ] Long AI scenarios: **Discord** module uses `channelId` and `messageId` from the webhook payload
 - [ ] Test with `/webhook test name:your-workflow` in Discord
-- [ ] Test with a real @mention in the target channel
+- [ ] Test with a real @HookBot message in the target channel
 - [ ] For routers: response is `{ "route": "workflow-name" }`, not the final user answer
 
 ## Related pages
