@@ -437,9 +437,11 @@ If a workflow takes longer than about a minute, Make often replies with **Accept
 
 For long Agents:
 
-1. Set `PUBLIC_BASE_URL` to this bot’s public HTTPS URL.
+1. In the real `.env` file (not `.env.example`), set `WEBHOOK_TIMEOUT_MS=500000`, set `PORT` to your host’s public port, and set `PUBLIC_BASE_URL` to `http://your-host:that-port`.
 2. In Make, after the Agent, add an **HTTP** module that POSTs the Agent text to the `callbackUrl` field from the webhook payload.
 3. Send header `x-callback-token` with the `callbackToken` value from the same payload.
+
+Do not edit `.env.example` on the hosting panel. That file is tracked by Git, so local edits there block `git pull`.
 
 Scenarios that finish while Make is still holding the original webhook (usually under 1–2 minutes) can keep using **Webhook response** as before.
 {% endhint %}
