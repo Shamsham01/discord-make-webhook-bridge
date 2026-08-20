@@ -8,6 +8,7 @@ import { env, assertRequiredEnvironment } from './env.js';
 import { GuildConfigStore, normalizeName } from './store.js';
 import { buildMessagePayload } from './payload.js';
 import { postToWebhook } from './webhook.js';
+import { isChannelAllowed, resolveMentionWebhook } from './routing.js';
 import {
   handleAutocomplete,
   handleRunCommand,
@@ -92,9 +93,18 @@ client.on(Events.MessageCreate, async (message) => {
   }
   if (!mentioned && !repliedToBot) return;
 
-  const initialName = config.routerWebhook || config.defaultWebhook;
-  const initialWebhook = config.webhooks[initialName];
-  if (!initialWebhook || !isChannelAllowed(message, initialWebhook.channelId)) return;
+  const resolved = resolveMentionWebhook(config, {
+    channelId: message.channelId,
+    parentChannelId: message.channel.parentId ?? null,
+  });
+  if (!resolved) {
+    console.warn(
+      `[discord] Mention/reply ignored guild=${message.guildId} channel=${message.channelId} default=${config.defaultWebhook ?? 'none'} router=${config.routerWebhook ?? 'none'} (no workflow allowed in this channel)`,
+    );
+    return;
+  }
+
+  const { name: initialName, webhook: initialWebhook } = resolved;
 
   processedMessages.set(message.id, Date.now());
   const trigger = mentioned && repliedToBot ? 'mention+reply' : mentioned ? 'mention' : 'reply';
@@ -118,7 +128,9 @@ client.on(Events.MessageCreate, async (message) => {
       try { routeName = normalizeName(result.route); } catch { routeName = null; }
       const routedWebhook = routeName ? config.webhooks[routeName] : null;
       if (!routedWebhook) throw new Error(`AI router selected unknown workflow “${result.route}”.`);
-      if (!isChannelAllowed(message, routedWebhook.channelId)) throw new Error(`AI router selected workflow “${routeName}” outside its permitted channel.`);
+      if (!isChannelAllowed(message.channelId, message.channel.parentId ?? null, routedWebhook.channelId)) {
+        throw new Error(`AI router selected workflow “${routeName}” outside its permitted channel.`);
+      }
       if (routeName !== initialName) {
         payload.workflow = routeName;
         payload.routedBy = config.routerWebhook;
@@ -145,11 +157,6 @@ client.on(Events.MessageCreate, async (message) => {
 
 function deliver(webhook, payload) {
   return postToWebhook({ url: webhook.webhookUrl, secret: webhook.secret, timeoutMs: env.webhookTimeoutMs, payload });
-}
-
-function isChannelAllowed(message, configuredChannelId) {
-  if (!configuredChannelId) return true;
-  return message.channelId === configuredChannelId || message.channel.parentId === configuredChannelId;
 }
 
 function pruneProcessedMessages() {
