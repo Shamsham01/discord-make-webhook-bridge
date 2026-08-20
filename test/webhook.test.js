@@ -161,41 +161,38 @@ test('does not treat a delayed Accepted webhook as a successful Agent reply', as
         holdTimeoutHintMs: 20,
         payload: { event: 'discord.workflow.run', guildId: 'g', messageId: 'm' },
       }),
-      (error) => error.code === 'MAKE_HOLD_TIMEOUT' && /WEBHOOK_TIMEOUT_MS cannot extend/.test(error.message),
+      (error) => error.code === 'MAKE_HOLD_TIMEOUT' && /PUBLIC_BASE_URL/.test(error.message),
     );
   } finally {
     await server.close();
   }
 });
 
-test('waits for a Make callback after a delayed Accepted webhook response', async () => {
+test('waits for a Make reply after a delayed Accepted webhook response', async () => {
   let callbacks;
-  const callbackServer = await listen(async (request, response) => {
+  const replyServer = await listen(async (request, response) => {
     await callbacks.handleRequest(request, response);
   });
-  callbacks = createCallbackRegistry({ publicBaseUrl: callbackServer.url });
+  callbacks = createCallbackRegistry({ publicBaseUrl: replyServer.url });
 
   const makeServer = await listen((request, response) => {
     const chunks = [];
     request.on('data', (chunk) => chunks.push(chunk));
     request.on('end', () => {
       const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      assert.equal(typeof payload.callbackUrl, 'string');
-      assert.equal(typeof payload.callbackToken, 'string');
+      assert.equal(typeof payload.replyUrl, 'string');
+      assert.match(payload.replyUrl, /\/webhook\//);
       setTimeout(() => {
         response.writeHead(200, { 'content-type': 'text/plain' });
         response.end('Accepted');
       }, 40);
       setTimeout(() => {
-        fetch(payload.callbackUrl, {
+        fetch(payload.replyUrl, {
           method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-callback-token': payload.callbackToken,
-          },
-          body: JSON.stringify({ reply: 'Agent finished later' }),
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ messageId: payload.messageId, reply: 'Agent finished later' }),
         }).catch((error) => {
-          console.error('callback post failed', error);
+          console.error('reply post failed', error);
         });
       }, 80);
     });
@@ -207,21 +204,21 @@ test('waits for a Make callback after a delayed Accepted webhook response', asyn
       timeoutMs: 1_000,
       holdTimeoutHintMs: 20,
       callbacks,
-      payload: { event: 'discord.workflow.run', guildId: 'g', messageId: 'm', content: 'go' },
+      payload: { event: 'discord.workflow.run', guildId: 'g', messageId: 'm', workflow: 'nft-flipping-agent', content: 'go' },
     });
     assert.deepEqual(result.replies, ['Agent finished later']);
   } finally {
     await makeServer.close();
-    await callbackServer.close();
+    await replyServer.close();
   }
 });
 
-test('waits for a callback after an immediate Accepted when a callback URL exists', async () => {
+test('waits for a reply after an immediate Accepted when replyUrl exists', async () => {
   let callbacks;
-  const callbackServer = await listen(async (request, response) => {
+  const replyServer = await listen(async (request, response) => {
     await callbacks.handleRequest(request, response);
   });
-  callbacks = createCallbackRegistry({ publicBaseUrl: callbackServer.url });
+  callbacks = createCallbackRegistry({ publicBaseUrl: replyServer.url });
 
   const makeServer = await listen((request, response) => {
     const chunks = [];
@@ -231,15 +228,12 @@ test('waits for a callback after an immediate Accepted when a callback URL exist
       response.writeHead(200, { 'content-type': 'text/plain' });
       response.end('Accepted');
       setTimeout(() => {
-        fetch(payload.callbackUrl, {
+        fetch(payload.replyUrl, {
           method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-callback-token': payload.callbackToken,
-          },
-          body: JSON.stringify({ Response: 'HOLD for this cycle.' }),
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ messageId: payload.messageId, Response: 'HOLD for this cycle.' }),
         }).catch((error) => {
-          console.error('callback post failed', error);
+          console.error('reply post failed', error);
         });
       }, 30);
     });
@@ -251,12 +245,12 @@ test('waits for a callback after an immediate Accepted when a callback URL exist
       timeoutMs: 1_000,
       holdTimeoutHintMs: 50,
       callbacks,
-      payload: { event: 'discord.workflow.run', guildId: 'g', messageId: 'm', content: 'go' },
+      payload: { event: 'discord.workflow.run', guildId: 'g', messageId: 'm', workflow: 'nft-flipping-agent', content: 'go' },
     });
     assert.deepEqual(result.replies, ['HOLD for this cycle.']);
   } finally {
     await makeServer.close();
-    await callbackServer.close();
+    await replyServer.close();
   }
 });
 

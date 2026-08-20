@@ -1,15 +1,20 @@
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 import { resultFromWebhookBody } from './webhook.js';
 
-const UUID_PATH = /^\/callbacks\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+const WEBHOOK_PATH = /^\/webhook\/([^/?#]+)\/?$/i;
 
-export function createCallbackRegistry({ publicBaseUrl, maxBodyBytes = 1_000_000 } = {}) {
+export function createReplyRegistry({ publicBaseUrl, replySecret, maxBodyBytes = 1_000_000 } = {}) {
   const pending = new Map();
   const base = publicBaseUrl ? String(publicBaseUrl).replace(/\/$/, '') : null;
 
-  function createWaiter(timeoutMs) {
-    const id = randomUUID();
-    const token = randomBytes(24).toString('hex');
+  function replyUrlForWorkflow(workflowName) {
+    if (!base || !workflowName) return null;
+    return `${base}/webhook/${encodeURIComponent(workflowName)}`;
+  }
+
+  function createWaiter({ messageId, workflow, timeoutMs }) {
+    if (!messageId) return null;
+
     let settled = false;
     let resolvePromise;
     let rejectPromise;
@@ -21,8 +26,8 @@ export function createCallbackRegistry({ publicBaseUrl, maxBodyBytes = 1_000_000
 
     const timer = setTimeout(() => {
       finish(() => {
-        const error = new Error(`Timed out waiting for Make to POST the workflow reply to callbackUrl after ${timeoutMs} ms.`);
-        error.code = 'CALLBACK_TIMEOUT';
+        const error = new Error(`Timed out waiting for Make to POST the workflow reply to replyUrl after ${timeoutMs} ms.`);
+        error.code = 'REPLY_TIMEOUT';
         rejectPromise(error);
       });
     }, timeoutMs);
@@ -31,47 +36,40 @@ export function createCallbackRegistry({ publicBaseUrl, maxBodyBytes = 1_000_000
       if (settled) return false;
       settled = true;
       clearTimeout(timer);
-      pending.delete(id);
+      pending.delete(messageId);
       fn();
       return true;
     }
 
     const waiter = {
-      id,
-      token,
-      callbackUrl: base ? `${base}/callbacks/${id}` : null,
+      messageId,
+      workflow,
+      replyUrl: replyUrlForWorkflow(workflow),
       promise,
       resolve(result) {
         finish(() => resolvePromise(result));
       },
       cancel() {
         finish(() => {
-          const error = new Error('Callback wait cancelled.');
-          error.code = 'CALLBACK_CANCELLED';
+          const error = new Error('Reply wait cancelled.');
+          error.code = 'REPLY_CANCELLED';
           rejectPromise(error);
         });
       },
     };
 
-    pending.set(id, waiter);
+    pending.set(messageId, waiter);
     return waiter;
   }
 
   async function handleRequest(request, response) {
     const url = new URL(request.url, 'http://127.0.0.1');
-    const match = url.pathname.match(UUID_PATH);
+    const match = url.pathname.match(WEBHOOK_PATH);
     if (!match) return false;
 
     if (request.method !== 'POST' && request.method !== 'PUT') {
       response.writeHead(405, { allow: 'POST, PUT', 'content-type': 'application/json' });
       response.end(JSON.stringify({ ok: false, error: 'Method not allowed' }));
-      return true;
-    }
-
-    const waiter = pending.get(match[1].toLowerCase());
-    if (!waiter) {
-      response.writeHead(404, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ ok: false, error: 'Unknown or expired callback' }));
       return true;
     }
 
@@ -84,10 +82,24 @@ export function createCallbackRegistry({ publicBaseUrl, maxBodyBytes = 1_000_000
       return true;
     }
 
-    const providedToken = getProvidedToken(request, url, body);
-    if (!tokensMatch(providedToken, waiter.token)) {
+    const providedSecret = getProvidedSecret(request, url, body);
+    if (replySecret && !secretsMatch(providedSecret, replySecret)) {
       response.writeHead(401, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ ok: false, error: 'Invalid callback token' }));
+      response.end(JSON.stringify({ ok: false, error: 'Invalid reply secret' }));
+      return true;
+    }
+
+    const messageId = getMessageId(body);
+    if (!messageId) {
+      response.writeHead(400, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ ok: false, error: 'messageId is required in the JSON body' }));
+      return true;
+    }
+
+    const waiter = pending.get(messageId);
+    if (!waiter) {
+      response.writeHead(404, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ ok: false, error: 'Unknown or expired messageId' }));
       return true;
     }
 
@@ -101,29 +113,46 @@ export function createCallbackRegistry({ publicBaseUrl, maxBodyBytes = 1_000_000
   return {
     createWaiter,
     handleRequest,
+    replyUrlForWorkflow,
     get pendingCount() {
       return pending.size;
     },
   };
 }
 
-function getProvidedToken(request, url, body) {
-  const headerToken = request.headers['x-callback-token'];
-  if (headerToken) return String(headerToken).trim();
+// Backwards-compatible export name used across the app.
+export const createCallbackRegistry = createReplyRegistry;
+
+function getMessageId(body) {
+  const trimmed = String(body ?? '').trim();
+  if (!trimmed.startsWith('{')) return '';
+  try {
+    const parsed = JSON.parse(trimmed);
+    const value = parsed?.messageId ?? parsed?.message_id;
+    return typeof value === 'string' ? value.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+function getProvidedSecret(request, url, body) {
+  const headerSecret = request.headers['x-reply-secret'] ?? request.headers['x-callback-token'];
+  if (headerSecret) return String(headerSecret).trim();
 
   const authorization = String(request.headers.authorization ?? '');
   const bearer = authorization.match(/^Bearer\s+(.+)$/i);
   if (bearer) return bearer[1].trim();
 
-  const queryToken = url.searchParams.get('token') || url.searchParams.get('callbackToken');
-  if (queryToken) return queryToken.trim();
+  const querySecret = url.searchParams.get('secret') || url.searchParams.get('token');
+  if (querySecret) return querySecret.trim();
 
   const trimmed = body.trim();
   if (trimmed.startsWith('{')) {
     try {
       const parsed = JSON.parse(trimmed);
-      if (typeof parsed?.callbackToken === 'string') return parsed.callbackToken.trim();
-      if (typeof parsed?.token === 'string') return parsed.token.trim();
+      for (const field of ['replySecret', 'secret', 'token', 'callbackToken']) {
+        if (typeof parsed?.[field] === 'string') return parsed[field].trim();
+      }
     } catch {
       return '';
     }
@@ -131,7 +160,7 @@ function getProvidedToken(request, url, body) {
   return '';
 }
 
-function tokensMatch(provided, expected) {
+function secretsMatch(provided, expected) {
   if (!provided || !expected) return false;
   const left = Buffer.from(String(provided));
   const right = Buffer.from(String(expected));
@@ -147,7 +176,7 @@ function readRequestBody(request, maxBodyBytes) {
       size += chunk.length;
       if (size > maxBodyBytes) {
         request.destroy();
-        reject(new Error('Callback body is too large.'));
+        reject(new Error('Reply body is too large.'));
       } else {
         chunks.push(chunk);
       }

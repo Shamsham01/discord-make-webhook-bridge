@@ -131,14 +131,15 @@ export function isLikelyMakeHoldTimeout(result, elapsedMs, hintMs = MAKE_HOLD_TI
   return isPlaceholderWebhookResult(result) && elapsedMs >= hintMs;
 }
 
-export function createMakeHoldTimeoutError({ elapsedMs, timeoutMs, hasCallbackUrl, body }) {
+export function createMakeHoldTimeoutError({ elapsedMs, timeoutMs, hasReplyUrl, body, replyUrl }) {
   const elapsedSec = Math.max(1, Math.round(elapsedMs / 1000));
   const waitSec = Math.max(1, Math.round(timeoutMs / 1000));
   const bodyHint = summarizeWebhookBody(body);
+  const urlHint = replyUrl ? ` Expected Make to POST to ${replyUrl} with messageId and the Agent text.` : '';
   const error = new Error(
-    hasCallbackUrl
-      ? `Make closed the webhook after ${elapsedSec}s with no reply text${bodyHint}. The bot kept waiting until ${waitSec}s for Make to POST the Agent output to callbackUrl. Add an HTTP module at the end of the scenario that POSTs the Agent response to callbackUrl, with header x-callback-token set to callbackToken.`
-      : `Make closed the webhook after ${elapsedSec}s with no reply text${bodyHint}. Make does not keep custom webhooks open for long-running Agents, so raising WEBHOOK_TIMEOUT_MS cannot extend that hold. Set PUBLIC_BASE_URL on the bot, then add an HTTP module at the end of the Make scenario that POSTs the Agent response to callbackUrl with header x-callback-token.`,
+    hasReplyUrl
+      ? `Make closed the webhook after ${elapsedSec}s with no reply text${bodyHint}. The bot kept waiting until ${waitSec}s for Make to POST the Agent output to replyUrl.${urlHint} In Make, add an HTTP module: URL = replyUrl from the webhook payload (or your fixed /webhook/workflow-name address), body includes messageId plus Response/reply.`
+      : `Make closed the webhook after ${elapsedSec}s with no reply text${bodyHint}. Set PUBLIC_BASE_URL in .env to your bot’s public address (for example http://your-host:5028), then add an HTTP module in Make that POSTs the Agent response to replyUrl with messageId in the body.`,
   );
   error.code = 'MAKE_HOLD_TIMEOUT';
   return error;
@@ -159,12 +160,13 @@ export async function invokeMakeWebhook({
   callbacks,
   holdTimeoutHintMs = MAKE_HOLD_TIMEOUT_HINT_MS,
 }) {
-  const waiter = callbacks?.createWaiter?.(timeoutMs) ?? null;
+  const waiter = callbacks?.createWaiter?.({
+    messageId: payload.messageId,
+    workflow: payload.workflow,
+    timeoutMs,
+  }) ?? null;
   const outbound = { ...payload };
-  if (waiter?.callbackUrl) {
-    outbound.callbackUrl = waiter.callbackUrl;
-    outbound.callbackToken = waiter.token;
-  }
+  if (waiter?.replyUrl) outbound.replyUrl = waiter.replyUrl;
 
   const fetchAbort = new AbortController();
   const startedAt = Date.now();
@@ -177,31 +179,32 @@ export async function invokeMakeWebhook({
   }).then((result) => ({ type: 'webhook', result }))
     .catch((error) => ({ type: 'webhook', error }));
 
-  const callbackPromise = waiter
+  const replyPromise = waiter
     ? waiter.promise
-        .then((result) => ({ type: 'callback', result }))
-        .catch((error) => ({ type: 'callback', error }))
+        .then((result) => ({ type: 'reply', result }))
+        .catch((error) => ({ type: 'reply', error }))
     : null;
 
   try {
-    const first = callbackPromise
-      ? await Promise.race([webhookPromise, callbackPromise])
+    const first = replyPromise
+      ? await Promise.race([webhookPromise, replyPromise])
       : await webhookPromise;
 
-    if (first.type === 'callback') {
+    if (first.type === 'reply') {
       if (first.error) {
-        if (first.error.code === 'CALLBACK_TIMEOUT') {
+        if (first.error.code === 'REPLY_TIMEOUT') {
           const webhookOutcome = await webhookPromise;
           if (webhookOutcome.result?.replies?.length) return webhookOutcome.result;
           if (webhookOutcome.error) throw webhookOutcome.error;
           throw createMakeHoldTimeoutError({
             elapsedMs: Date.now() - startedAt,
             timeoutMs,
-            hasCallbackUrl: Boolean(waiter?.callbackUrl),
+            hasReplyUrl: Boolean(waiter?.replyUrl),
             body: webhookOutcome.result?.body,
+            replyUrl: waiter?.replyUrl,
           });
         }
-        if (first.error.code === 'CALLBACK_CANCELLED') {
+        if (first.error.code === 'REPLY_CANCELLED') {
           const webhookOutcome = await webhookPromise;
           if (webhookOutcome.error) throw webhookOutcome.error;
           return webhookOutcome.result;
@@ -219,36 +222,36 @@ export async function invokeMakeWebhook({
       return first.result;
     }
 
-    // Make often returns “Accepted” immediately (no Webhook response module) while
-    // the Agent keeps running. If we advertised a callback URL, wait for that POST.
+    // Make often returns “Accepted” immediately while the Agent keeps running.
     const elapsedMs = Date.now() - startedAt;
-    const waitForCallback = Boolean(waiter?.callbackUrl) && isPlaceholderWebhookResult(first.result);
-    if (!waitForCallback && !isLikelyMakeHoldTimeout(first.result, elapsedMs, holdTimeoutHintMs)) {
+    const waitForReply = Boolean(waiter?.replyUrl) && isPlaceholderWebhookResult(first.result);
+    if (!waitForReply && !isLikelyMakeHoldTimeout(first.result, elapsedMs, holdTimeoutHintMs)) {
       waiter?.cancel();
       return first.result;
     }
 
-    if (!waiter?.callbackUrl) {
+    if (!waiter?.replyUrl) {
       throw createMakeHoldTimeoutError({
         elapsedMs,
         timeoutMs,
-        hasCallbackUrl: false,
+        hasReplyUrl: false,
         body: first.result.body,
       });
     }
 
     console.warn(
-      `[webhook] Make returned HTTP ${first.result.status} without reply text after ${elapsedMs} ms${summarizeWebhookBody(first.result.body)}. Waiting for callback until ${timeoutMs} ms.`,
+      `[webhook] Make returned HTTP ${first.result.status} without reply text after ${elapsedMs} ms${summarizeWebhookBody(first.result.body)}. Waiting for POST to ${waiter.replyUrl} until ${timeoutMs} ms.`,
     );
 
-    const later = await callbackPromise;
+    const later = await replyPromise;
     if (later.error) {
-      if (later.error.code === 'CALLBACK_TIMEOUT' || later.error.code === 'CALLBACK_CANCELLED') {
+      if (later.error.code === 'REPLY_TIMEOUT' || later.error.code === 'REPLY_CANCELLED') {
         throw createMakeHoldTimeoutError({
           elapsedMs: Date.now() - startedAt,
           timeoutMs,
-          hasCallbackUrl: Boolean(waiter?.callbackUrl),
+          hasReplyUrl: Boolean(waiter?.replyUrl),
           body: first.result.body,
+          replyUrl: waiter?.replyUrl,
         });
       }
       throw later.error;

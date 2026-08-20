@@ -437,11 +437,17 @@ If a workflow takes longer than about a minute, Make often replies with **Accept
 
 For long Agents:
 
-1. In the real `.env` file (not `.env.example`), set `WEBHOOK_TIMEOUT_MS=500000`, set `PORT` to your host’s public port, and set `PUBLIC_BASE_URL` to `http://your-host:that-port`.
-2. In Make, after the Agent, add an **HTTP** module that POSTs the Agent text to the `callbackUrl` field from the webhook payload.
-3. Send header `x-callback-token` with the `callbackToken` value from the same payload.
+1. In `.env`, set `PUBLIC_BASE_URL` to your bot’s public address (for example `http://your-host:5028`) and `PORT` to the same port.
+2. In Make, after the Agent, add **HTTP → Make a request** that POSTs to either:
+   - the fixed address `http://your-host:5028/webhook/<workflow-name>`, or
+   - the `replyUrl` field from the Discord webhook payload (same path, sent automatically).
+3. Include **`messageId`** from the webhook payload in the JSON body, plus the Agent text in `Response` or `reply`.
+
+Example Make body: `{ "messageId": "<from webhook>", "Response": "<agent text>" }`.
 
 Do not edit `.env.example` on the hosting panel. That file is tracked by Git, so local edits there block `git pull`.
+
+**Note:** Make’s HTTP module may reject some `http://` URLs even though plain HTTP worked in older setups. If you see **Invalid URL**, try your server’s IP address instead of the hostname, or use Make’s **Webhook response** module when the Agent finishes in under ~1–2 minutes.
 
 Scenarios that finish while Make is still holding the original webhook (usually under 1–2 minutes) can keep using **Webhook response** as before.
 {% endhint %}
