@@ -21,11 +21,11 @@ assertRequiredEnvironment();
 
 const store = new GuildConfigStore(env.dataFile);
 await store.init();
-const callbacks = createCallbackRegistry({ publicBaseUrl: env.publicBaseUrl });
+const callbacks = createCallbackRegistry({ publicBaseUrl: env.publicBaseUrl, replySecret: env.replySecret });
 if (env.publicBaseUrl) {
-  console.log(`[webhook] Timeout ${env.webhookTimeoutMs} ms; callbacks enabled at ${env.publicBaseUrl.replace(/\/$/, '')}/callbacks/:id`);
+  console.log(`[webhook] Timeout ${env.webhookTimeoutMs} ms; Make can POST replies to ${env.publicBaseUrl.replace(/\/$/, '')}/webhook/<workflow-name>`);
 } else {
-  console.warn(`[webhook] Timeout ${env.webhookTimeoutMs} ms. PUBLIC_BASE_URL is not set, so long-running Make scenarios that return “Accepted” cannot deliver the Agent reply back to Discord.`);
+  console.warn(`[webhook] Timeout ${env.webhookTimeoutMs} ms. PUBLIC_BASE_URL is not set, so long-running Make scenarios cannot POST Agent replies back to Discord.`);
 }
 
 const client = new Client({
