@@ -16,11 +16,19 @@ function optionalString(value) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+export function normalizePublicBaseUrl(rawUrl) {
+  if (!rawUrl) return null;
+  let base = String(rawUrl).trim().replace(/\/+$/, '');
+  // Some hosts paste the full /webhook/workflow path into PUBLIC_BASE_URL by mistake.
+  base = base.replace(/\/webhook\/[^/?#]+$/i, '');
+  return base.length > 0 ? base : null;
+}
+
 export const env = Object.freeze({
   discordToken: optionalString(process.env.DISCORD_TOKEN),
   dataFile: path.resolve(process.env.DATA_FILE || './data/guilds.json'),
   webhookTimeoutMs: parsePositiveInteger(process.env.WEBHOOK_TIMEOUT_MS, 120_000),
-  publicBaseUrl: optionalString(process.env.PUBLIC_BASE_URL) || optionalString(process.env.RENDER_EXTERNAL_URL),
+  publicBaseUrl: normalizePublicBaseUrl(optionalString(process.env.PUBLIC_BASE_URL) || optionalString(process.env.RENDER_EXTERNAL_URL)),
   replySecret: optionalString(process.env.REPLY_SECRET),
   allowedWebhookHosts: (process.env.ALLOWED_WEBHOOK_HOSTS || '*.make.com')
     .split(',')
