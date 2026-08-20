@@ -39,6 +39,10 @@ test('extracts only explicit JSON reply fields', () => {
     extractReplies('{"reply":"Hello"}', 'application/json; charset=utf-8'),
     ['Hello'],
   );
+  assert.deepEqual(
+    extractReplies('{"Response":"Agent summary"}', 'application/json'),
+    ['Agent summary'],
+  );
   assert.deepEqual(extractReplies('Accepted', 'text/plain'), []);
   assert.deepEqual(extractReplies('{"status":"ok"}', 'application/json'), []);
 });
@@ -206,6 +210,50 @@ test('waits for a Make callback after a delayed Accepted webhook response', asyn
       payload: { event: 'discord.workflow.run', guildId: 'g', messageId: 'm', content: 'go' },
     });
     assert.deepEqual(result.replies, ['Agent finished later']);
+  } finally {
+    await makeServer.close();
+    await callbackServer.close();
+  }
+});
+
+test('waits for a callback after an immediate Accepted when a callback URL exists', async () => {
+  let callbacks;
+  const callbackServer = await listen(async (request, response) => {
+    await callbacks.handleRequest(request, response);
+  });
+  callbacks = createCallbackRegistry({ publicBaseUrl: callbackServer.url });
+
+  const makeServer = await listen((request, response) => {
+    const chunks = [];
+    request.on('data', (chunk) => chunks.push(chunk));
+    request.on('end', () => {
+      const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end('Accepted');
+      setTimeout(() => {
+        fetch(payload.callbackUrl, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-callback-token': payload.callbackToken,
+          },
+          body: JSON.stringify({ Response: 'HOLD for this cycle.' }),
+        }).catch((error) => {
+          console.error('callback post failed', error);
+        });
+      }, 30);
+    });
+  });
+
+  try {
+    const result = await invokeMakeWebhook({
+      url: makeServer.url,
+      timeoutMs: 1_000,
+      holdTimeoutHintMs: 50,
+      callbacks,
+      payload: { event: 'discord.workflow.run', guildId: 'g', messageId: 'm', content: 'go' },
+    });
+    assert.deepEqual(result.replies, ['HOLD for this cycle.']);
   } finally {
     await makeServer.close();
     await callbackServer.close();

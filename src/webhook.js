@@ -219,8 +219,11 @@ export async function invokeMakeWebhook({
       return first.result;
     }
 
+    // Make often returns “Accepted” immediately (no Webhook response module) while
+    // the Agent keeps running. If we advertised a callback URL, wait for that POST.
     const elapsedMs = Date.now() - startedAt;
-    if (!isLikelyMakeHoldTimeout(first.result, elapsedMs, holdTimeoutHintMs)) {
+    const waitForCallback = Boolean(waiter?.callbackUrl) && isPlaceholderWebhookResult(first.result);
+    if (!waitForCallback && !isLikelyMakeHoldTimeout(first.result, elapsedMs, holdTimeoutHintMs)) {
       waiter?.cancel();
       return first.result;
     }
@@ -305,8 +308,10 @@ export function extractReplies(responseText, contentType = '') {
 
 function extractRepliesFromData(parsed) {
   const candidates = [];
-  if (typeof parsed?.reply === 'string') candidates.push(parsed.reply);
-  if (typeof parsed?.content === 'string') candidates.push(parsed.content);
+  const fields = ['reply', 'content', 'text', 'result', 'output', 'response', 'Response', 'message', 'body'];
+  for (const field of fields) {
+    if (typeof parsed?.[field] === 'string') candidates.push(parsed[field]);
+  }
   if (Array.isArray(parsed?.replies)) candidates.push(...parsed.replies);
   if (Array.isArray(parsed?.messages)) candidates.push(...parsed.messages);
   return candidates.filter((value) => typeof value === 'string' && value.trim()).flatMap((value) => splitDiscordMessage(value.trim()));
