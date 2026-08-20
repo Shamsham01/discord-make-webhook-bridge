@@ -8,7 +8,7 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "test": "node --test",
-    "check": "node --check src/index.js && node --check src/commands.js && node --check src/store.js && node --check src/webhook.js && node --check src/callbacks.js && node --check src/health.js && node --test"
+    "check": "node --check src/index.js && node --check src/commands.js && node --check src/store.js && node --check src/webhook.js && node --check src/health.js && node --test"
   },
   "engines": {
     "node": ">=20.0.0"

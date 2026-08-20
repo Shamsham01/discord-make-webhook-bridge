@@ -5,7 +5,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import { normalizeName } from './store.js';
-import { invokeMakeWebhook, validateWebhookUrl } from './webhook.js';
+import { postToWebhook, validateWebhookUrl } from './webhook.js';
 
 const EPHEMERAL = MessageFlags.Ephemeral;
 
@@ -151,7 +151,7 @@ function isWebhookAllowedInChannel(webhook, channelId, parentChannelId) {
   return webhook.channelId === channelId || webhook.channelId === parentChannelId;
 }
 
-export async function handleWebhookCommand(interaction, { store, env, callbacks }) {
+export async function handleWebhookCommand(interaction, { store, env }) {
   if (!interaction.inGuild()) {
     return interaction.reply({ content: 'This command can only be used in a server.', flags: EPHEMERAL });
   }
@@ -250,11 +250,10 @@ export async function handleWebhookCommand(interaction, { store, env, callbacks 
   if (subcommand === 'test') {
     await interaction.deferReply({ flags: EPHEMERAL });
     try {
-      const result = await invokeMakeWebhook({
+      const result = await postToWebhook({
         url: webhook.webhookUrl,
         secret: webhook.secret,
         timeoutMs: env.webhookTimeoutMs,
-        callbacks,
         payload: {
           event: 'discord.webhook.test',
           trigger: 'command',
@@ -278,7 +277,7 @@ export async function handleWebhookCommand(interaction, { store, env, callbacks 
   }
 }
 
-export async function handleRunCommand(interaction, { store, env, callbacks }) {
+export async function handleRunCommand(interaction, { store, env }) {
   const config = store.get(interaction.guildId);
   let name;
   try { name = normalizeName(interaction.options.getString('workflow', true)); }
@@ -300,11 +299,10 @@ export async function handleRunCommand(interaction, { store, env, callbacks }) {
   await interaction.deferReply();
   try {
     const input = interaction.options.getString('input', true);
-    const result = await invokeMakeWebhook({
+    const result = await postToWebhook({
       url: webhook.webhookUrl,
       secret: webhook.secret,
       timeoutMs: env.webhookTimeoutMs,
-      callbacks,
       payload: {
         event: 'discord.workflow.run',
         trigger: 'slash-command',
@@ -330,7 +328,6 @@ export async function handleRunCommand(interaction, { store, env, callbacks }) {
     await interaction.editReply({ content: result.replies.shift(), allowedMentions: { parse: [] } });
     for (const reply of result.replies) await interaction.followUp({ content: reply, allowedMentions: { parse: [] } });
   } catch (error) {
-    const prefix = error.code === 'MAKE_HOLD_TIMEOUT' ? '⚠️' : '❌';
-    await interaction.editReply(`${prefix} Workflow **${name}** ${error.code === 'MAKE_HOLD_TIMEOUT' ? 'did not return a reply' : 'failed'}: ${error.message}`);
+    await interaction.editReply(`❌ Workflow **${name}** failed: ${error.message}`);
   }
 }

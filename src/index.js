@@ -7,8 +7,7 @@ import {
 import { env, assertRequiredEnvironment } from './env.js';
 import { GuildConfigStore, normalizeName } from './store.js';
 import { buildMessagePayload } from './payload.js';
-import { invokeMakeWebhook } from './webhook.js';
-import { createCallbackRegistry } from './callbacks.js';
+import { postToWebhook } from './webhook.js';
 import {
   handleAutocomplete,
   handleRunCommand,
@@ -21,12 +20,6 @@ assertRequiredEnvironment();
 
 const store = new GuildConfigStore(env.dataFile);
 await store.init();
-const callbacks = createCallbackRegistry({ publicBaseUrl: env.publicBaseUrl, replySecret: env.replySecret });
-if (env.publicBaseUrl) {
-  console.log(`[webhook] Timeout ${env.webhookTimeoutMs} ms; Make can POST replies to ${env.publicBaseUrl.replace(/\/$/, '')}/webhook/<workflow-name>`);
-} else {
-  console.warn(`[webhook] Timeout ${env.webhookTimeoutMs} ms. PUBLIC_BASE_URL is not set, so long-running Make scenarios cannot POST Agent replies back to Discord.`);
-}
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -67,8 +60,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
     if (!interaction.isChatInputCommand()) return;
-    if (interaction.commandName === 'webhook') await handleWebhookCommand(interaction, { store, env, callbacks });
-    if (interaction.commandName === 'run') await handleRunCommand(interaction, { store, env, callbacks });
+    if (interaction.commandName === 'webhook') await handleWebhookCommand(interaction, { store, env });
+    if (interaction.commandName === 'run') await handleRunCommand(interaction, { store, env });
   } catch (error) {
     console.error('[discord] Command failed:', error);
     const message = '❌ The command failed unexpectedly. Check the bot logs.';
@@ -107,9 +100,9 @@ client.on(Events.MessageCreate, async (message) => {
   const trigger = mentioned && repliedToBot ? 'mention+reply' : mentioned ? 'mention' : 'reply';
   let acknowledgement = null;
 
-  const stopTyping = startTypingLoop(message.channel);
   try {
     if (env.ackReaction) acknowledgement = await message.react(env.ackReaction).catch(() => null);
+    await message.channel.sendTyping().catch(() => {});
 
     const payload = buildMessagePayload({ message, botUser: client.user, trigger, referencedMessage });
     payload.workflow = initialName;
@@ -145,38 +138,13 @@ client.on(Events.MessageCreate, async (message) => {
     if (env.errorReaction) await message.react(env.errorReaction).catch(() => {});
     console.error(`[webhook] Delivery failed for guild=${message.guildId} channel=${message.channelId} message=${message.id}:`, error);
     if (env.showDeliveryErrors) {
-      const content = error.code === 'MAKE_HOLD_TIMEOUT'
-        ? error.message
-        : 'I could not complete the configured automation. A server administrator should run `/webhook test`.';
-      await message.reply({ content, allowedMentions: { parse: [], repliedUser: false } }).catch(() => {});
+      await message.reply({ content: 'I could not complete the configured automation. A server administrator should run `/webhook test`.', allowedMentions: { parse: [], repliedUser: false } }).catch(() => {});
     }
-  } finally {
-    stopTyping();
   }
 });
 
 function deliver(webhook, payload) {
-  return invokeMakeWebhook({
-    url: webhook.webhookUrl,
-    secret: webhook.secret,
-    timeoutMs: env.webhookTimeoutMs,
-    payload,
-    callbacks,
-  });
-}
-
-function startTypingLoop(channel) {
-  let active = true;
-  const ping = () => {
-    if (!active) return;
-    channel.sendTyping().catch(() => {});
-  };
-  ping();
-  const interval = setInterval(ping, 8_000);
-  return () => {
-    active = false;
-    clearInterval(interval);
-  };
+  return postToWebhook({ url: webhook.webhookUrl, secret: webhook.secret, timeoutMs: env.webhookTimeoutMs, payload });
 }
 
 function isChannelAllowed(message, configuredChannelId) {
@@ -191,7 +159,7 @@ function pruneProcessedMessages() {
   }
 }
 
-const healthServer = startHealthServer({ port: env.port, client, store, callbacks });
+const healthServer = startHealthServer({ port: env.port, client, store });
 
 async function shutdown(signal) {
   console.log(`[system] Received ${signal}; shutting down.`);
