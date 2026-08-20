@@ -433,23 +433,7 @@ A successful test means Make received the message. It does not always mean Make 
 {% endhint %}
 
 {% hint style="info" %}
-If a workflow takes longer than about a minute, Make often replies with **Accepted** and keeps running in the background. Raising `WEBHOOK_TIMEOUT_MS` does not change Make’s own webhook hold time.
-
-For long Agents:
-
-1. In `.env`, set `PUBLIC_BASE_URL` to your bot’s public address (for example `http://your-host:5028`) and `PORT` to the same port.
-2. In Make, after the Agent, add **HTTP → Make a request** that POSTs to either:
-   - the fixed address `http://your-host:5028/webhook/<workflow-name>`, or
-   - the `replyUrl` field from the Discord webhook payload (same path, sent automatically).
-3. Include **`messageId`** from the webhook payload in the JSON body, plus the Agent text in `Response` or `reply`.
-
-Example Make body: `{ "messageId": "<from webhook>", "Response": "<agent text>" }`.
-
-Do not edit `.env.example` on the hosting panel. That file is tracked by Git, so local edits there block `git pull`.
-
-**Note:** Make’s HTTP module may reject some `http://` URLs even though plain HTTP worked in older setups. If you see **Invalid URL**, try your server’s IP address instead of the hostname, or use Make’s **Webhook response** module when the Agent finishes in under ~1–2 minutes.
-
-Scenarios that finish while Make is still holding the original webhook (usually under 1–2 minutes) can keep using **Webhook response** as before.
+For Make to send text back to Discord, add a **Webhook response** module at the end of the scenario (after the Agent). Map the Agent output into the response body, for example `{ "reply": "..." }` or plain text. The bot waits for that HTTP response from Make — you do not need a separate HTTP module calling back to the bot.
 {% endhint %}
 
 ### `/webhook remove`

@@ -3,7 +3,6 @@ import { Agent } from 'undici';
 
 const MAX_ERROR_BODY_LENGTH = 500;
 const DISCORD_MESSAGE_LIMIT = 2_000;
-export const MAKE_HOLD_TIMEOUT_HINT_MS = 8_000;
 
 export function validateWebhookUrl(rawUrl, allowedHosts) {
   let url;
@@ -46,20 +45,9 @@ function isPrivateIpLiteral(hostname) {
   return normalized === '::1' || normalized === '::' || normalized.startsWith('fc') || normalized.startsWith('fd') || /^fe[89ab]/.test(normalized);
 }
 
-export function isAbortError(error) {
-  if (!error) return false;
-  if (error.name === 'AbortError' || error.code === 'ABORT_ERR') return true;
-  return isAbortError(error.cause);
-}
-
-export async function postToWebhook({ url, payload, secret, timeoutMs, signal }) {
+export async function postToWebhook({ url, payload, secret, timeoutMs }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  const onExternalAbort = () => controller.abort();
-  if (signal) {
-    if (signal.aborted) controller.abort();
-    else signal.addEventListener('abort', onExternalAbort, { once: true });
-  }
 
   const dispatcher = new Agent({
     headersTimeout: timeoutMs,
@@ -92,174 +80,19 @@ export async function postToWebhook({ url, payload, secret, timeoutMs, signal })
     }
 
     const contentType = response.headers.get('content-type');
-    return resultFromWebhookBody({ status: response.status, body: responseText, contentType });
+    const data = parseJsonResponse(responseText, contentType);
+    return {
+      status: response.status,
+      replies: extractReplies(responseText, contentType),
+      route: typeof data?.route === 'string' ? data.route.trim().toLowerCase() : null,
+      data,
+    };
   } catch (error) {
-    if (isAbortError(error)) {
-      if (signal?.aborted) {
-        const cancelled = new Error('Webhook request was cancelled.');
-        cancelled.code = 'WEBHOOK_CANCELLED';
-        throw cancelled;
-      }
-      throw new Error(`Webhook timed out after ${timeoutMs} ms.`);
-    }
+    if (error.name === 'AbortError') throw new Error(`Webhook timed out after ${timeoutMs} ms.`);
     throw error;
   } finally {
     clearTimeout(timeout);
-    signal?.removeEventListener('abort', onExternalAbort);
     dispatcher.close();
-  }
-}
-
-export function resultFromWebhookBody({ status, body, contentType = '' }) {
-  const responseText = String(body ?? '');
-  const data = parseJsonResponse(responseText, contentType);
-  return {
-    status,
-    body: responseText,
-    replies: extractReplies(responseText, contentType),
-    route: typeof data?.route === 'string' ? data.route.trim().toLowerCase() : null,
-    data,
-  };
-}
-
-export function isPlaceholderWebhookResult(result) {
-  if (result?.replies?.length) return false;
-  return isIgnorableWebhookBody(result?.body ?? '');
-}
-
-export function isLikelyMakeHoldTimeout(result, elapsedMs, hintMs = MAKE_HOLD_TIMEOUT_HINT_MS) {
-  return isPlaceholderWebhookResult(result) && elapsedMs >= hintMs;
-}
-
-export function createMakeHoldTimeoutError({ elapsedMs, timeoutMs, hasReplyUrl, body, replyUrl }) {
-  const elapsedSec = Math.max(1, Math.round(elapsedMs / 1000));
-  const waitSec = Math.max(1, Math.round(timeoutMs / 1000));
-  const bodyHint = summarizeWebhookBody(body);
-  const urlHint = replyUrl ? ` Expected Make to POST to ${replyUrl} with messageId and the Agent text.` : '';
-  const error = new Error(
-    hasReplyUrl
-      ? `Make closed the webhook after ${elapsedSec}s with no reply text${bodyHint}. The bot kept waiting until ${waitSec}s for Make to POST the Agent output to replyUrl.${urlHint} In Make, add an HTTP module: URL = replyUrl from the webhook payload (or your fixed /webhook/workflow-name address), body includes messageId plus Response/reply.`
-      : `Make closed the webhook after ${elapsedSec}s with no reply text${bodyHint}. Set PUBLIC_BASE_URL in .env to your bot’s public address (for example http://your-host:5028), then add an HTTP module in Make that POSTs the Agent response to replyUrl with messageId in the body.`,
-  );
-  error.code = 'MAKE_HOLD_TIMEOUT';
-  return error;
-}
-
-function summarizeWebhookBody(body) {
-  const trimmed = String(body ?? '').trim();
-  if (!trimmed) return '';
-  const preview = trimmed.length > 40 ? `${trimmed.slice(0, 40)}…` : trimmed;
-  return ` (body: ${JSON.stringify(preview)})`;
-}
-
-export async function invokeMakeWebhook({
-  url,
-  payload,
-  secret,
-  timeoutMs,
-  callbacks,
-  holdTimeoutHintMs = MAKE_HOLD_TIMEOUT_HINT_MS,
-}) {
-  const waiter = callbacks?.createWaiter?.({
-    messageId: payload.messageId,
-    workflow: payload.workflow,
-    timeoutMs,
-  }) ?? null;
-  const outbound = { ...payload };
-  if (waiter?.replyUrl) outbound.replyUrl = waiter.replyUrl;
-
-  const fetchAbort = new AbortController();
-  const startedAt = Date.now();
-  const webhookPromise = postToWebhook({
-    url,
-    payload: outbound,
-    secret,
-    timeoutMs,
-    signal: fetchAbort.signal,
-  }).then((result) => ({ type: 'webhook', result }))
-    .catch((error) => ({ type: 'webhook', error }));
-
-  const replyPromise = waiter
-    ? waiter.promise
-        .then((result) => ({ type: 'reply', result }))
-        .catch((error) => ({ type: 'reply', error }))
-    : null;
-
-  try {
-    const first = replyPromise
-      ? await Promise.race([webhookPromise, replyPromise])
-      : await webhookPromise;
-
-    if (first.type === 'reply') {
-      if (first.error) {
-        if (first.error.code === 'REPLY_TIMEOUT') {
-          const webhookOutcome = await webhookPromise;
-          if (webhookOutcome.result?.replies?.length) return webhookOutcome.result;
-          if (webhookOutcome.error) throw webhookOutcome.error;
-          throw createMakeHoldTimeoutError({
-            elapsedMs: Date.now() - startedAt,
-            timeoutMs,
-            hasReplyUrl: Boolean(waiter?.replyUrl),
-            body: webhookOutcome.result?.body,
-            replyUrl: waiter?.replyUrl,
-          });
-        }
-        if (first.error.code === 'REPLY_CANCELLED') {
-          const webhookOutcome = await webhookPromise;
-          if (webhookOutcome.error) throw webhookOutcome.error;
-          return webhookOutcome.result;
-        }
-        throw first.error;
-      }
-      fetchAbort.abort();
-      return first.result;
-    }
-
-    if (first.error) throw first.error;
-
-    if (first.result.replies.length) {
-      waiter?.cancel();
-      return first.result;
-    }
-
-    // Make often returns “Accepted” immediately while the Agent keeps running.
-    const elapsedMs = Date.now() - startedAt;
-    const waitForReply = Boolean(waiter?.replyUrl) && isPlaceholderWebhookResult(first.result);
-    if (!waitForReply && !isLikelyMakeHoldTimeout(first.result, elapsedMs, holdTimeoutHintMs)) {
-      waiter?.cancel();
-      return first.result;
-    }
-
-    if (!waiter?.replyUrl) {
-      throw createMakeHoldTimeoutError({
-        elapsedMs,
-        timeoutMs,
-        hasReplyUrl: false,
-        body: first.result.body,
-      });
-    }
-
-    console.warn(
-      `[webhook] Make returned HTTP ${first.result.status} without reply text after ${elapsedMs} ms${summarizeWebhookBody(first.result.body)}. Waiting for POST to ${waiter.replyUrl} until ${timeoutMs} ms.`,
-    );
-
-    const later = await replyPromise;
-    if (later.error) {
-      if (later.error.code === 'REPLY_TIMEOUT' || later.error.code === 'REPLY_CANCELLED') {
-        throw createMakeHoldTimeoutError({
-          elapsedMs: Date.now() - startedAt,
-          timeoutMs,
-          hasReplyUrl: Boolean(waiter?.replyUrl),
-          body: first.result.body,
-          replyUrl: waiter?.replyUrl,
-        });
-      }
-      throw later.error;
-    }
-    return later.result;
-  } finally {
-    waiter?.cancel();
-    if (!fetchAbort.signal.aborted) fetchAbort.abort();
   }
 }
 
@@ -276,7 +109,7 @@ function parseJsonResponse(responseText, contentType = '') {
   try { return JSON.parse(trimmedResponse); } catch { return null; }
 }
 
-export function isIgnorableWebhookBody(text) {
+function isIgnorableWebhookBody(text) {
   const normalized = String(text ?? '').trim().toLowerCase();
   return !normalized || normalized === 'accepted' || normalized === '"accepted"';
 }
@@ -311,10 +144,10 @@ export function extractReplies(responseText, contentType = '') {
 
 function extractRepliesFromData(parsed) {
   const candidates = [];
-  const fields = ['reply', 'content', 'text', 'result', 'output', 'response', 'Response', 'message', 'body'];
-  for (const field of fields) {
-    if (typeof parsed?.[field] === 'string') candidates.push(parsed[field]);
-  }
+  if (typeof parsed?.reply === 'string') candidates.push(parsed.reply);
+  if (typeof parsed?.content === 'string') candidates.push(parsed.content);
+  if (typeof parsed?.response === 'string') candidates.push(parsed.response);
+  if (typeof parsed?.Response === 'string') candidates.push(parsed.Response);
   if (Array.isArray(parsed?.replies)) candidates.push(...parsed.replies);
   if (Array.isArray(parsed?.messages)) candidates.push(...parsed.messages);
   return candidates.filter((value) => typeof value === 'string' && value.trim()).flatMap((value) => splitDiscordMessage(value.trim()));
